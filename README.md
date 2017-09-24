@@ -1,0 +1,2 @@
+# kraken
+bitcoin trading bot
