@@ -1,0 +1,156 @@
+require 'pry'
+require 'json'
+require 'net/http'
+require 'dotenv/load'
+require 'kraken_client'
+
+def get_last_trade_price(client)
+  client.public.ticker(ENV['TICKER_PAIR_NAME'])[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
+end
+
+def margin_buy(client, amount_in_btc)
+  puts "#{Time.now} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+
+  order = {
+    pair: ENV['TRADE_PAIR_NAME'],
+    type: 'buy',
+    ordertype: 'market',
+    volume: amount_in_btc
+  }
+
+  client.private.add_order(order)
+end
+
+def margin_sell(client, amount_in_btc)
+  puts "#{Time.now} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+
+  order = {
+    pair: ENV['TRADE_PAIR_NAME'],
+    type: 'sell',
+    ordertype: 'market',
+    volume: amount_in_btc
+  }
+
+  client.private.add_order(order)
+end
+
+def get_current_coin_balance(client)
+  client.private.balance[ENV['BALANCE_COIN_NAME']].to_f.round(4)
+end
+
+def open_orders?(client)
+  orders = client.private.open_orders['open']
+
+  orders.values.any? do |h|
+    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'margin'
+  end
+end
+
+def get_last_closed_buy_trade_date(client)
+  orders = client.private.closed_orders
+
+  orders = orders['closed'].values.select do |o|
+    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
+      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'margin' &&
+      o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
+  end
+
+  return nil unless orders.any?
+
+  orders.sort_by { |o| o['closetm'] }.last['closetm'].to_i
+end
+
+# TODO: When the Kraken API wrapper gem is updated replace with its use.
+# See https://github.com/shideneyu/kraken_client
+def get_daily_high(client)
+  ohlc = Net::HTTP.get(URI("https://api.kraken.com/0/public/OHLC?pair=#{ENV['TICKER_PAIR_NAME']}&interval=1440"))
+
+  JSON.parse(ohlc).dig('result', ENV['TICKER_PAIR_NAME']).last[2].to_f
+end
+
+def buy(client, current_price, daily_high_price, current_coins)
+  return false if current_price.nil? || daily_high_price.nil? || current_coins.nil?
+
+  return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
+
+  return false if current_price >= daily_high_price * (ENV['BUY_POINT'].to_f)
+
+  last_buy_time = get_last_closed_buy_trade_date(client)
+  return false if last_buy_time && (Time.now - last_buy_time) < 18 * 60 * 60 # 18 hours minimum
+
+  margin_buy(client)
+end
+
+def calculate_avg_buy_price(client, current_coins)
+  orders = client.private.closed_orders
+
+  orders = orders['closed'].values.select do |o|
+    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
+      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'margin' &&
+      o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
+  end
+
+  return nil unless orders.any?
+
+  idx = 0
+  total_btc = 0.0
+  total_spent = 0.0
+  while idx < orders.count
+    spent = orders[idx]['cost'].to_f
+    amount = orders[idx]['vol'].to_f
+
+    break if total_btc + amount > current_coins
+
+    total_spent += spent
+    total_btc += amount
+
+    break if total_btc == current_coins
+
+    ++idx
+  end
+
+  total_spent / total_btc
+end
+
+def sell(client, current_price, avg_buy_price, current_coins)
+  return false if current_price.nil? || avg_buy_price.nil? || current_coins.nil?
+
+  return false if current_coins < 0.0001
+
+  exit_value = avg_buy_price * (ENV['SELL_POINT'].to_f)
+
+  return false if exit_value > current_price
+
+  margin_sell(client, current_coins)
+end
+
+KrakenClient.configure do |config|
+  config.api_key = ENV['KRAKEN_API_KEY']
+  config.api_secret = ENV['KRAKEN_API_SECRET']
+  config.base_uri = 'https://api.kraken.com'
+  config.api_version = 0
+  config.limiter = false
+  config.tier = ENV['KRAKEN_USER_TIER'].to_i
+end
+
+client = KrakenClient.load
+
+loop do
+  sleep(10)
+
+  next if open_orders?(client)
+
+  current_coins = get_current_coin_balance(client)
+
+  current_price = get_last_trade_price(client)
+
+  avg_buy_price = calculate_avg_buy_price(client, current_coins)
+
+  daily_high_price = get_daily_high(client)
+
+  puts "#{Time.now} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'}, last market price: #{current_price || 'n/a'} EUR, daily high: #{daily_high_price || 'n/a'} EUR"
+
+  next if buy(client, current_price, daily_high_price, current_coins)
+
+  sell(client, current_price, avg_buy_price, current_coins)
+end
