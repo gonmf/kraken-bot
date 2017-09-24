@@ -8,7 +8,7 @@ def get_last_trade_price(client)
   client.public.ticker(ENV['TICKER_PAIR_NAME'])[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
 end
 
-def margin_buy(client, amount_in_btc)
+def market_buy(client, amount_in_btc)
   puts "#{Time.now} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
@@ -21,7 +21,7 @@ def margin_buy(client, amount_in_btc)
   client.private.add_order(order)
 end
 
-def margin_sell(client, amount_in_btc)
+def market_sell(client, amount_in_btc)
   puts "#{Time.now} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
@@ -42,7 +42,7 @@ def open_orders?(client)
   orders = client.private.open_orders['open']
 
   orders.values.any? do |h|
-    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'margin'
+    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 end
 
@@ -51,7 +51,7 @@ def get_last_closed_buy_trade_date(client)
 
   orders = orders['closed'].values.select do |o|
     o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'margin' &&
+      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'market' &&
       o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
   end
 
@@ -76,9 +76,9 @@ def buy(client, current_price, daily_high_price, current_coins)
   return false if current_price >= daily_high_price * (ENV['BUY_POINT'].to_f)
 
   last_buy_time = get_last_closed_buy_trade_date(client)
-  return false if last_buy_time && (Time.now - last_buy_time) < 18 * 60 * 60 # 18 hours minimum
+  return false if last_buy_time && (Time.now - last_buy_time) < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
 
-  margin_buy(client)
+  market_buy(client)
 end
 
 def calculate_avg_buy_price(client, current_coins)
@@ -86,7 +86,7 @@ def calculate_avg_buy_price(client, current_coins)
 
   orders = orders['closed'].values.select do |o|
     o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'margin' &&
+      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'market' &&
       o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
   end
 
@@ -121,7 +121,7 @@ def sell(client, current_price, avg_buy_price, current_coins)
 
   return false if exit_value > current_price
 
-  margin_sell(client, current_coins)
+  market_sell(client, current_coins)
 end
 
 KrakenClient.configure do |config|
@@ -136,7 +136,7 @@ end
 client = KrakenClient.load
 
 loop do
-  sleep(10)
+  sleep(ENV['POLL_INTERVAL'].to_i)
 
   next if open_orders?(client)
 
