@@ -46,7 +46,7 @@ def open_orders?(client)
   end
 end
 
-def get_last_closed_buy_trade_date(client)
+def get_last_closed_buy_trade(client)
   orders = client.private.closed_orders
 
   orders = orders['closed'].values.select do |o|
@@ -57,7 +57,9 @@ def get_last_closed_buy_trade_date(client)
 
   return nil unless orders.any?
 
-  orders.sort_by { |o| o['closetm'] }.last['closetm'].to_i
+  trade = orders.sort_by { |o| o['closetm'] }.last
+
+  OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
 end
 
 # TODO: When the Kraken API wrapper gem is updated replace with its use.
@@ -75,8 +77,15 @@ def buy(client, current_price, daily_high_price, current_coins)
 
   return false if current_price >= daily_high_price * (ENV['BUY_POINT'].to_f)
 
-  last_buy_time = get_last_closed_buy_trade_date(client)
-  return false if last_buy_time && (Time.now - last_buy_time) < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+  last_buy = get_last_closed_buy_trade(client)
+
+  unless last_buy.nil?
+    # Do not buy if the minimum wait after a period has not elapsed
+    return false if Time.now - last_buy.time < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+
+    # Do not buy if the price hasn't fallen since the last buy price
+    return false if last_buy.price * (ENV['BUY_POINT'].to_f) < current_price
+  end
 
   market_buy(client)
 end
