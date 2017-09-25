@@ -11,5 +11,5 @@ cp .env.example .env
 
 vi .env
 
-ruby kraken.rb
+bundle exec ruby kraken.rb
 ```
