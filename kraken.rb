@@ -62,12 +62,10 @@ def get_last_closed_buy_trade(client)
   OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
 end
 
-# TODO: When the Kraken API wrapper gem is updated replace with its use.
-# See https://github.com/shideneyu/kraken_client
 def get_daily_high(client)
-  ohlc = Net::HTTP.get(URI("https://api.kraken.com/0/public/OHLC?pair=#{ENV['TICKER_PAIR_NAME']}&interval=1440"))
+  ohlc = client.public.ohlc(pair: ENV['TICKER_PAIR_NAME'], interval: 1440)
 
-  line = JSON.parse(ohlc).dig('result', ENV['TICKER_PAIR_NAME'])&.last
+  line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
   return nil if line.nil? || line.count != 8
 
   line[2].to_f
