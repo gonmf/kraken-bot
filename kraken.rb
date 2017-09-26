@@ -12,7 +12,7 @@ def get_last_trade_price(client)
 end
 
 def market_buy(client, amount_in_btc)
-  puts "#{Time.now} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{Time.now.strftime('%F %T')} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
@@ -25,7 +25,7 @@ def market_buy(client, amount_in_btc)
 end
 
 def market_sell(client, amount_in_btc)
-  puts "#{Time.now} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{Time.now.strftime('%F %T')} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
@@ -171,7 +171,7 @@ loop do
   price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  puts "#{Time.now} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
+  puts "#{Time.now.strftime('%F %T')} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
 
   next if buy(client, current_price, daily_high_price, current_coins)
 
