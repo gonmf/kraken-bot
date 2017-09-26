@@ -13,6 +13,9 @@ def get_last_trade_price(client)
   return nil if ticker.nil?
 
   ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
+rescue
+  puts 'error: get_last_trade_price'
+  nil
 end
 
 def market_buy(client, amount_in_btc)
@@ -26,6 +29,9 @@ def market_buy(client, amount_in_btc)
   }
 
   client.private.add_order(order)
+rescue
+  puts 'error: market_buy'
+  nil
 end
 
 def market_sell(client, amount_in_btc)
@@ -39,6 +45,9 @@ def market_sell(client, amount_in_btc)
   }
 
   client.private.add_order(order)
+rescue
+  puts 'error: market_sell'
+  nil
 end
 
 def get_current_coin_balance(client)
@@ -46,6 +55,9 @@ def get_current_coin_balance(client)
   return nil if balance.nil?
 
   balance.to_f.round(4)
+rescue
+  puts 'error: get_current_coin_balance'
+  nil
 end
 
 def open_orders?(client)
@@ -55,6 +67,9 @@ def open_orders?(client)
   orders['open'].values.any? do |h|
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
+rescue
+  puts 'error: open_orders?'
+  nil
 end
 
 def get_last_closed_buy_trade(client)
@@ -72,6 +87,9 @@ def get_last_closed_buy_trade(client)
   trade = orders.sort_by { |o| o['closetm'] }.last
 
   OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
+rescue
+  puts 'error: get_last_closed_buy_trade'
+  nil
 end
 
 def get_daily_high(client)
@@ -82,6 +100,9 @@ def get_daily_high(client)
   return nil if line.nil? || line.count != 8
 
   line[2].to_f
+rescue
+  puts 'error: get_daily_high'
+  nil
 end
 
 def calculate_avg_buy_price(client, current_coins)
@@ -114,6 +135,9 @@ def calculate_avg_buy_price(client, current_coins)
   end
 
   total_spent / total_btc
+rescue
+  puts 'error: calculate_avg_buy_price'
+  nil
 end
 
 def buy(client, current_price, daily_high_price, current_coins)
