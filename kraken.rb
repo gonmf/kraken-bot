@@ -4,6 +4,10 @@ require 'net/http'
 require 'dotenv/load'
 require 'kraken_client'
 
+def timestamp
+  Time.now.strftime('%F %T')
+end
+
 def get_last_trade_price(client)
   ticker = client.public.ticker(ENV['TICKER_PAIR_NAME'])
   return nil if ticker.nil?
@@ -12,7 +16,7 @@ def get_last_trade_price(client)
 end
 
 def market_buy(client, amount_in_btc)
-  puts "#{Time.now.strftime('%F %T')} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
@@ -25,7 +29,7 @@ def market_buy(client, amount_in_btc)
 end
 
 def market_sell(client, amount_in_btc)
-  puts "#{Time.now.strftime('%F %T')} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
@@ -144,6 +148,8 @@ def sell(client, current_price, avg_buy_price, current_coins)
   market_sell(client, current_coins)
 end
 
+STDOUT.sync = true
+
 KrakenClient.configure do |config|
   config.api_key = ENV['KRAKEN_API_KEY']
   config.api_secret = ENV['KRAKEN_API_SECRET']
@@ -171,7 +177,7 @@ loop do
   price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  puts "#{Time.now.strftime('%F %T')} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
+  puts "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
 
   next if buy(client, current_price, daily_high_price, current_coins)
 
