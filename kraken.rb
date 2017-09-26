@@ -67,7 +67,10 @@ end
 def get_daily_high(client)
   ohlc = Net::HTTP.get(URI("https://api.kraken.com/0/public/OHLC?pair=#{ENV['TICKER_PAIR_NAME']}&interval=1440"))
 
-  JSON.parse(ohlc).dig('result', ENV['TICKER_PAIR_NAME']).last[2].to_f
+  line = JSON.parse(ohlc).dig('result', ENV['TICKER_PAIR_NAME'])&.last
+  return nil if line.nil? || line.count != 8
+
+  line[2].to_f
 end
 
 def buy(client, current_price, daily_high_price, current_coins)
