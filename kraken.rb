@@ -13,8 +13,9 @@ def get_last_trade_price(client)
   return nil if ticker.nil?
 
   ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
-rescue
-  puts 'error: get_last_trade_price'
+rescue Exception => e
+  puts "error: get_last_trade_price: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -29,8 +30,9 @@ def market_buy(client, amount_in_btc)
   }
 
   client.private.add_order(order)
-rescue
-  puts 'error: market_buy'
+rescue Exception => e
+  puts "error: market_buy: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -45,8 +47,9 @@ def market_sell(client, amount_in_btc)
   }
 
   client.private.add_order(order)
-rescue
-  puts 'error: market_sell'
+rescue Exception => e
+  puts "error: market_sell: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -55,8 +58,9 @@ def get_current_coin_balance(client)
   return nil if balance.nil?
 
   balance.to_f.round(4)
-rescue
-  puts 'error: get_current_coin_balance'
+rescue Exception => e
+  puts "error: get_current_coin_balance: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -67,8 +71,9 @@ def open_orders?(client)
   orders['open'].values.any? do |h|
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
-rescue
-  puts 'error: open_orders?'
+rescue Exception => e
+  puts "error: open_orders?: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -87,8 +92,9 @@ def get_last_closed_buy_trade(client)
   trade = orders.sort_by { |o| o['closetm'] }.last
 
   OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
-rescue
-  puts 'error: get_last_closed_buy_trade'
+rescue Exception => e
+  puts "error: get_last_closed_buy_trade: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -100,8 +106,9 @@ def get_daily_high(client)
   return nil if line.nil? || line.count != 8
 
   line[2].to_f
-rescue
-  puts 'error: get_daily_high'
+rescue Exception => e
+  puts "error: get_daily_high: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -135,8 +142,9 @@ def calculate_avg_buy_price(client, current_coins)
   end
 
   total_spent / total_btc
-rescue
-  puts 'error: calculate_avg_buy_price'
+rescue Exception => e
+  puts "error: calculate_avg_buy_price: #{e.message}"
+  puts e.backtrace.inspect
   nil
 end
 
@@ -157,7 +165,7 @@ def buy(client, current_price, daily_high_price, current_coins)
     return false if last_buy.price * (ENV['BUY_POINT'].to_f) < current_price
   end
 
-  market_buy(client)
+  market_buy(client, ENV['BUY_IN_AMOUNT'].to_f)
 end
 
 def sell(client, current_price, avg_buy_price, current_coins)
