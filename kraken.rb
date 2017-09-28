@@ -14,14 +14,11 @@ def get_last_trade_price(client)
 
   ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
 rescue Exception => e
-  puts "error: get_last_trade_price: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ get_last_trade_price"
   nil
 end
 
 def market_buy(client, amount_in_btc)
-  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
-
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
     type: 'buy',
@@ -30,15 +27,14 @@ def market_buy(client, amount_in_btc)
   }
 
   client.private.add_order(order)
+
+  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 rescue Exception => e
-  puts "error: market_buy: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ market_buy"
   nil
 end
 
 def market_sell(client, amount_in_btc)
-  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
-
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
     type: 'sell',
@@ -47,9 +43,10 @@ def market_sell(client, amount_in_btc)
   }
 
   client.private.add_order(order)
+
+  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
 rescue Exception => e
-  puts "error: market_sell: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ market_sell"
   nil
 end
 
@@ -59,8 +56,7 @@ def get_current_coin_balance(client)
 
   balance.to_f.round(4)
 rescue Exception => e
-  puts "error: get_current_coin_balance: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ get_current_coin_balance"
   nil
 end
 
@@ -72,9 +68,8 @@ def open_orders?(client)
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 rescue Exception => e
-  puts "error: open_orders?: #{e.message}"
-  puts e.backtrace.inspect
-  nil
+  puts "#{timestamp} | API failure @ open_orders?"
+  true
 end
 
 def get_last_closed_buy_trade(client)
@@ -93,8 +88,7 @@ def get_last_closed_buy_trade(client)
 
   OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
 rescue Exception => e
-  puts "error: get_last_closed_buy_trade: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ get_last_closed_buy_trade"
   nil
 end
 
@@ -107,8 +101,7 @@ def get_daily_high(client)
 
   line[2].to_f
 rescue Exception => e
-  puts "error: get_daily_high: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ get_daily_high"
   nil
 end
 
@@ -143,8 +136,7 @@ def calculate_avg_buy_price(client, current_coins)
 
   total_spent / total_btc
 rescue Exception => e
-  puts "error: calculate_avg_buy_price: #{e.message}"
-  puts e.backtrace.inspect
+  puts "#{timestamp} | API failure @ calculate_avg_buy_price"
   nil
 end
 
@@ -204,7 +196,7 @@ loop do
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
-  daily_high_price = get_daily_high(client)
+  daily_high_price = get_daily_high(client) || daily_high_price
 
   price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
