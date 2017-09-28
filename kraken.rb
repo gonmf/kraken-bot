@@ -82,11 +82,11 @@ def get_last_closed_buy_trade(client)
       o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
   end
 
-  return nil unless orders.any?
+  return [] unless orders.any?
 
   trade = orders.sort_by { |o| o['closetm'] }.last
 
-  OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)
+  [OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)]
 rescue Exception => e
   puts "#{timestamp} | API failure @ get_last_closed_buy_trade"
   nil
@@ -148,8 +148,11 @@ def buy(client, current_price, daily_high_price, current_coins)
   return false if current_price >= daily_high_price * (ENV['BUY_POINT'].to_f)
 
   last_buy = get_last_closed_buy_trade(client)
+  return false if last_buy.nil?
 
-  unless last_buy.nil?
+  if last_buy.any?
+    last_buy = last_buy.first
+
     # Do not buy if the minimum wait after a period has not elapsed
     return false if Time.now - last_buy.time < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
 
