@@ -1,4 +1,4 @@
-require 'pry'
+require 'pry-byebug'
 require 'json'
 require 'net/http'
 require 'dotenv/load'
@@ -62,10 +62,11 @@ end
 
 def open_orders?(client)
   orders = client.private.open_orders
-  return nil if orders.nil?
+  return true if orders.nil?
 
   orders['open'].values.any? do |h|
-    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
+    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market' &&
+      (h.dig('descr', 'type') == 'sell' || (h.dig('descr', 'type') == 'buy' && h['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f))
   end
 rescue Exception => e
   puts "#{timestamp} | API failure @ open_orders?"
@@ -92,16 +93,16 @@ rescue Exception => e
   nil
 end
 
-def get_daily_high(client)
+def get_daily_average(client)
   ohlc = client.public.ohlc(pair: ENV['TICKER_PAIR_NAME'], interval: 1440)
   return nil if ohlc.nil?
 
   line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
   return nil if line.nil? || line.count != 8
 
-  line[2].to_f
+  (line[2].to_f + line[3].to_f) / 2.0
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_daily_high"
+  puts "#{timestamp} | API failure @ get_daily_average"
   nil
 end
 
@@ -131,7 +132,7 @@ def calculate_avg_buy_price(client, current_coins)
 
     break if total_btc == current_coins
 
-    ++idx
+    idx += 1
   end
 
   total_spent / total_btc
@@ -140,12 +141,12 @@ rescue Exception => e
   nil
 end
 
-def buy(client, current_price, daily_high_price, current_coins)
-  return false if current_price.nil? || daily_high_price.nil? || current_coins.nil?
+def buy(client, current_price, daily_avg_price, current_coins)
+  return false if current_price.nil? || daily_avg_price.nil? || current_coins.nil?
 
   return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
 
-  return false if current_price >= daily_high_price * (ENV['BUY_POINT'].to_f)
+  return false if current_price >= daily_avg_price * (ENV['BUY_POINT'].to_f)
 
   last_buy = get_last_closed_buy_trade(client)
   return false if last_buy.nil?
@@ -199,14 +200,14 @@ loop do
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
-  daily_high_price = get_daily_high(client) || daily_high_price
+  daily_avg_price = get_daily_average(client) || daily_avg_price
 
-  price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
+  price_change = current_price.nil? || daily_avg_price.nil? ? 1 : current_price / daily_avg_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  puts "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
+  puts "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily avg: #{daily_avg_price || 'n/a'} EUR"
 
-  next if buy(client, current_price, daily_high_price, current_coins)
+  next if buy(client, current_price, daily_avg_price, current_coins)
 
   sell(client, current_price, avg_buy_price, current_coins)
 end
