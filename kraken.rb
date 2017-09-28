@@ -100,7 +100,7 @@ def get_daily_average(client)
   line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
   return nil if line.nil? || line.count != 8
 
-  (line[2].to_f + line[3].to_f) / 2.0
+  line[5].to_f
 rescue Exception => e
   puts "#{timestamp} | API failure @ get_daily_average"
   nil
