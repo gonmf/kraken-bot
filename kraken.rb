@@ -135,6 +135,8 @@ def calculate_avg_buy_price(client, current_coins)
     idx += 1
   end
 
+  return nil if total_btc < ENV['BUY_IN_AMOUNT'].to_f
+
   total_spent / total_btc
 rescue Exception => e
   puts "#{timestamp} | API failure @ calculate_avg_buy_price"
