@@ -5,7 +5,7 @@ require 'dotenv/load'
 require 'kraken_client'
 
 def timestamp
-  Time.now.strftime('%F %T')
+  Time.now.strftime('%m-%d %H-%M-%S')
 end
 
 def get_last_trade_price(client)
@@ -107,6 +107,8 @@ rescue Exception => e
 end
 
 def calculate_avg_buy_price(client, current_coins)
+  return nil if current_coins.nil?
+
   orders = client.private.closed_orders
   return nil if orders.nil?
 
@@ -148,19 +150,19 @@ def buy(client, current_price, daily_avg_price, current_coins)
 
   return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
 
-  return false if current_price >= daily_avg_price * (ENV['BUY_POINT'].to_f)
+  return false if current_price > daily_avg_price * (ENV['BUY_POINT'].to_f)
 
-  last_buy = get_last_closed_buy_trade(client)
-  return false if last_buy.nil?
+  last_buys = get_last_closed_buy_trade(client)
+  return false if last_buys.nil?
 
-  if last_buy.any?
-    last_buy = last_buy.first
+  if last_buys.any?
+    last_buy = last_buys.first
 
     # Do not buy if the minimum wait after a period has not elapsed
     return false if Time.now - last_buy.time < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
 
     # Do not buy if the price hasn't fallen since the last buy price
-    return false if last_buy.price * (ENV['BUY_POINT'].to_f) < current_price
+    return false if current_price > last_buy.price * (ENV['BUY_POINT'].to_f)
   end
 
   market_buy(client, ENV['BUY_IN_AMOUNT'].to_f)
@@ -191,23 +193,49 @@ end
 
 client = KrakenClient.load
 
+iteration = 0
+daily_avg_price_bak = nil
+prev_str = nil
+
 loop do
-  sleep(ENV['POLL_INTERVAL'].to_i)
+  sleep(ENV['POLL_INTERVAL'].to_i) if iteration != 0
+  iteration += 1
+
+  # Do not cache these values forever
+  daily_avg_price = nil if (iteration % 4) == 0
 
   next if open_orders?(client)
 
   current_coins = get_current_coin_balance(client)
+  next if current_coins.nil?
 
   current_price = get_last_trade_price(client)
+  next if current_price.nil?
+
+  daily_avg_price = get_daily_average(client)
+  # Backup values of daily avg prices
+  if daily_avg_price.nil?
+    if daily_avg_price_bak.nil?
+      next
+    else
+      daily_avg_price = daily_avg_price_bak
+      daily_avg_price_bak = nil
+    end
+  else
+    daily_avg_price_bak = daily_avg_price
+  end
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
-
-  daily_avg_price = get_daily_average(client) || daily_avg_price
 
   price_change = current_price.nil? || daily_avg_price.nil? ? 1 : current_price / daily_avg_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  puts "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily avg: #{daily_avg_price || 'n/a'} EUR"
+  str = "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily avg: #{daily_avg_price || 'n/a'} EUR"
+
+  if str != prev_str
+    puts str
+    prev_str = str
+  end
 
   next if buy(client, current_price, daily_avg_price, current_coins)
 
