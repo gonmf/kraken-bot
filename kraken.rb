@@ -93,16 +93,16 @@ rescue Exception => e
   nil
 end
 
-def get_daily_average(client)
+def get_daily_high(client)
   ohlc = client.public.ohlc(pair: ENV['TICKER_PAIR_NAME'], interval: 1440)
   return nil if ohlc.nil?
 
   line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
   return nil if line.nil? || line.count != 8
 
-  line[5].to_f
+  line[2].to_f
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_daily_average"
+  puts "#{timestamp} | API failure @ get_daily_high"
   nil
 end
 
@@ -114,8 +114,7 @@ def calculate_avg_buy_price(client, current_coins)
 
   orders = orders['closed'].values.select do |o|
     o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'market' &&
-      o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
+      o.dig('descr', 'type') == 'buy'
   end
 
   return nil unless orders.any?
@@ -145,12 +144,12 @@ rescue Exception => e
   nil
 end
 
-def buy(client, current_price, daily_avg_price, current_coins)
-  return false if current_price.nil? || daily_avg_price.nil? || current_coins.nil?
+def buy(client, current_price, daily_high_price, current_coins)
+  return false if current_price.nil? || daily_high_price.nil? || current_coins.nil?
 
   return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
 
-  return false if current_price > daily_avg_price * (ENV['BUY_POINT'].to_f)
+  return false if current_price > daily_high_price * (ENV['BUY_POINT'].to_f)
 
   last_buys = get_last_closed_buy_trade(client)
   return false if last_buys.nil?
@@ -194,7 +193,7 @@ end
 client = KrakenClient.load
 
 iteration = 0
-daily_avg_price_bak = nil
+daily_high_price_bak = nil
 prev_str = nil
 
 loop do
@@ -202,7 +201,7 @@ loop do
   iteration += 1
 
   # Do not cache these values forever
-  daily_avg_price = nil if (iteration % 4) == 0
+  daily_high_price = nil if (iteration % 4) == 0
 
   next if open_orders?(client)
 
@@ -212,32 +211,32 @@ loop do
   current_price = get_last_trade_price(client)
   next if current_price.nil?
 
-  daily_avg_price = get_daily_average(client)
-  # Backup values of daily avg prices
-  if daily_avg_price.nil?
-    if daily_avg_price_bak.nil?
+  daily_high_price = get_daily_high(client)
+  # Backup values of daily high prices
+  if daily_high_price.nil?
+    if daily_high_price_bak.nil?
       next
     else
-      daily_avg_price = daily_avg_price_bak
-      daily_avg_price_bak = nil
+      daily_high_price = daily_high_price_bak
+      daily_high_price_bak = nil
     end
   else
-    daily_avg_price_bak = daily_avg_price
+    daily_high_price_bak = daily_high_price
   end
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
-  price_change = current_price.nil? || daily_avg_price.nil? ? 1 : current_price / daily_avg_price
+  price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  str = "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy value: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily avg: #{daily_avg_price || 'n/a'} EUR"
+  str = "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
 
   if str != prev_str
     puts str
     prev_str = str
   end
 
-  next if buy(client, current_price, daily_avg_price, current_coins)
+  next if buy(client, current_price, daily_high_price, current_coins)
 
   sell(client, current_price, avg_buy_price, current_coins)
 end
