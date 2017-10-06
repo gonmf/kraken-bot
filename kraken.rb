@@ -65,8 +65,7 @@ def open_orders?(client)
   return true if orders.nil?
 
   orders['open'].values.any? do |h|
-    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market' &&
-      (h.dig('descr', 'type') == 'sell' || (h.dig('descr', 'type') == 'buy' && h['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f))
+    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 rescue Exception => e
   puts "#{timestamp} | API failure @ open_orders?"
