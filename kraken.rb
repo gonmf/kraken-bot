@@ -196,6 +196,14 @@ daily_high_price_bak = nil
 prev_str = nil
 
 loop do
+  start_hour = ENV['BUSINESS_HOURS_START'].to_i
+  end_hour = ENV['BUSINESS_HOURS_END'].to_i
+  unless start_hour == end_hour || (start_hour >= Time.now.hour && Time.now.hour < end_hour)
+    puts "#{timestamp} | Outside business hours"
+    sleep(5 * 60) # Sleep for 5 minutes
+    next
+  end
+
   sleep(ENV['POLL_INTERVAL'].to_i) if iteration != 0
   iteration += 1
 
