@@ -134,7 +134,7 @@ def calculate_avg_buy_price(client, current_coins)
     idx += 1
   end
 
-  return nil if total_btc < ENV['BUY_IN_AMOUNT'].to_f
+  return nil if total_btc < 0.001
 
   total_spent / total_btc
 rescue Exception => e
