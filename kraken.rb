@@ -78,8 +78,7 @@ def get_last_closed_buy_trade(client)
 
   orders = orders['closed'].values.select do |o|
     o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy' && o.dig('descr', 'ordertype') == 'market' &&
-      o['vol'].to_f == ENV['BUY_IN_AMOUNT'].to_f
+      o.dig('descr', 'type') == 'buy'
   end
 
   return [] unless orders.any?
