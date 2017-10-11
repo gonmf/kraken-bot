@@ -5,7 +5,7 @@ require 'dotenv/load'
 require 'kraken_client'
 
 def timestamp
-  Time.now.strftime('%m-%d %H-%M-%S')
+  Time.now.strftime('%m-%d %H:%M:%S')
 end
 
 def get_last_trade_price(client)
