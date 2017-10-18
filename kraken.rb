@@ -26,7 +26,7 @@ def market_buy(client, amount_in_btc)
     volume: amount_in_btc
   }
 
-#  client.private.add_order(order)
+  client.private.add_order(order)
 
   puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
 rescue Exception => e
