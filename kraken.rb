@@ -26,9 +26,9 @@ def market_buy(client, amount_in_btc)
     volume: amount_in_btc
   }
 
-  client.private.add_order(order)
+#  client.private.add_order(order)
 
-  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
 rescue Exception => e
   puts "#{timestamp} | API failure @ market_buy"
   nil
@@ -44,7 +44,7 @@ def market_sell(client, amount_in_btc)
 
   client.private.add_order(order)
 
-  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['BALANCE_COIN_NAME']} ---"
+  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
 rescue Exception => e
   puts "#{timestamp} | API failure @ market_sell"
   nil
@@ -54,7 +54,9 @@ def get_current_coin_balance(client)
   balance = client.private.balance[ENV['BALANCE_COIN_NAME']]
   return nil if balance.nil?
 
-  balance.to_f.round(4)
+  balance = balance.to_f.round(4)
+
+  balance < ENV['MINIMUM_COIN_AMOUNT'].to_f ? 0.0 : balance
 rescue Exception => e
   puts "#{timestamp} | API failure @ get_current_coin_balance"
   nil
@@ -72,7 +74,9 @@ rescue Exception => e
   true
 end
 
-def get_last_closed_buy_trade(client)
+def get_last_closed_buy_trade(client, current_coins)
+  return [] if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
+
   orders = client.private.closed_orders
   return nil if orders.nil?
 
@@ -105,7 +109,7 @@ rescue Exception => e
 end
 
 def calculate_avg_buy_price(client, current_coins)
-  return nil if current_coins.nil?
+  return nil if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
 
   orders = client.private.closed_orders
   return nil if orders.nil?
@@ -134,7 +138,7 @@ def calculate_avg_buy_price(client, current_coins)
     idx += 1
   end
 
-  return nil if total_btc < 0.001
+  return nil if total_btc < ENV['MINIMUM_COIN_AMOUNT'].to_f
 
   total_spent / total_btc
 rescue Exception => e
@@ -149,7 +153,7 @@ def buy(client, current_price, daily_high_price, current_coins)
 
   return false if current_price > daily_high_price * (ENV['BUY_POINT'].to_f)
 
-  last_buys = get_last_closed_buy_trade(client)
+  last_buys = get_last_closed_buy_trade(client, current_coins)
   return false if last_buys.nil?
 
   if last_buys.any?
@@ -168,7 +172,7 @@ end
 def sell(client, current_price, avg_buy_price, current_coins)
   return false if current_price.nil? || avg_buy_price.nil? || current_coins.nil?
 
-  return false if current_coins < 0.0001
+  return false if current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
 
   exit_value = avg_buy_price * (ENV['SELL_POINT'].to_f)
 
@@ -193,6 +197,8 @@ client = KrakenClient.load
 iteration = 0
 daily_high_price_bak = nil
 prev_str = nil
+
+puts 'KRAKEN BOT USE AT YOUR OWN DISCRETION'
 
 loop do
   if ENV['HOURS_DISABLED'].split(',').map(&:to_i).include?(Time.now.hour)
@@ -233,10 +239,10 @@ loop do
   price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
   profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
 
-  str = "#{timestamp} | Own: #{current_coins || 'n/a'} #{ENV['BALANCE_COIN_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (#{(profit * 100.0).round(1)}%), last market price: #{current_price || 'n/a'} EUR (#{(price_change * 100.0).round(1)}%), daily high: #{daily_high_price || 'n/a'} EUR"
+  str = "Own: #{current_coins || 'n/a'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (#{(profit).round(1)}%), last market price: #{current_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']} (#{(price_change).round(1)}%), daily high: #{daily_high_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']}"
 
   if str != prev_str
-    puts str
+    puts "#{timestamp} | #{str}"
     prev_str = str
   end
 
