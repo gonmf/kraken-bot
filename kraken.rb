@@ -18,7 +18,9 @@ rescue Exception => e
   nil
 end
 
-def market_buy(client, amount_in_btc)
+def market_buy(client)
+  amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
+
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
     type: 'buy',
@@ -166,7 +168,7 @@ def buy(client, current_price, daily_high_price, current_coins)
     return false if current_price > last_buy.price * (ENV['BUY_POINT'].to_f)
   end
 
-  market_buy(client, ENV['BUY_IN_AMOUNT'].to_f)
+  market_buy(client)
 end
 
 def sell(client, current_price, avg_buy_price, current_coins)
@@ -198,7 +200,10 @@ iteration = 0
 daily_high_price_bak = nil
 prev_str = nil
 
-puts 'KRAKEN BOT USE AT YOUR OWN DISCRETION'
+if %w[KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].any? { |config| ENV[config].nil? }
+  puts 'Incorrect config, check .env file'
+  return
+end
 
 loop do
   if ENV['HOURS_DISABLED'].split(',').map(&:to_i).include?(Time.now.hour)
