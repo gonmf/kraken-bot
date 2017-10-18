@@ -3,9 +3,38 @@ require 'json'
 require 'net/http'
 require 'dotenv/load'
 require 'kraken_client'
+require 'mail'
 
 def timestamp
   Time.now.strftime('%m-%d %H:%M:%S')
+end
+
+def notify(body)
+  return if %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS].any? { |config| ENV[config].blank? }
+
+  options = { :address              => ENV['SMTP_SERVER'],
+              :port                 => ENV['SMTP_PORT'],
+              :domain               => ENV['SENDER_DOMAIN'],
+              :user_name            => ENV['SENDER_NAME'],
+              :password             => ENV['SENDER_PASSWORD'],
+              :authentication       => 'plain',
+              :enable_starttls_auto => true }
+
+  Mail.defaults do
+    delivery_method :smtp, options
+  end
+
+  mail = Mail.new do
+    from(ENV['SENDER_ADDRESS'])
+    to(ENV['DESTINATION_ADDRESS'])
+    subject('Kraken Bot Notification')
+    body(body)
+  end
+
+  mail.deliver!
+rescue Exception => e
+  puts "#{timestamp} | Email notification failed"
+  nil
 end
 
 def get_last_trade_price(client)
@@ -18,7 +47,7 @@ rescue Exception => e
   nil
 end
 
-def market_buy(client)
+def market_buy(client, current_price)
   amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
 
   puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
@@ -31,12 +60,14 @@ def market_buy(client)
   }
 
   client.private.add_order(order)
+
+  notify("Bought #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
 rescue Exception => e
   puts "#{timestamp} | API failure @ market_buy"
   nil
 end
 
-def market_sell(client, amount_in_btc)
+def market_sell(client, amount_in_btc, current_price)
   puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
 
   order = {
@@ -47,6 +78,8 @@ def market_sell(client, amount_in_btc)
   }
 
   client.private.add_order(order)
+
+  notify("Sold #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
 rescue Exception => e
   puts "#{timestamp} | API failure @ market_sell"
   nil
@@ -168,7 +201,7 @@ def buy(client, current_price, daily_high_price, current_coins)
     return false if current_price > last_buy.price * (ENV['BUY_POINT_SINCE_LAST'].to_f)
   end
 
-  market_buy(client)
+  market_buy(client, current_price)
 end
 
 def sell(client, current_price, avg_buy_price, current_coins)
@@ -180,7 +213,7 @@ def sell(client, current_price, avg_buy_price, current_coins)
 
   return false if exit_value > current_price
 
-  market_sell(client, current_coins)
+  market_sell(client, current_coins, current_price)
 end
 
 STDOUT.sync = true
@@ -200,8 +233,15 @@ iteration = 0
 daily_high_price_bak = nil
 prev_str = nil
 
-if %w[KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].any? { |config| ENV[config].nil? }
-  puts 'Incorrect config, check .env file'
+option_not_found = %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].nil? }
+if option_not_found
+  puts "Incorrect config: #{option_not_found} missing; check .env file"
+  return
+end
+
+option_not_found = %w[KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].blank? }
+if option_not_found
+  puts "Incorrect config: #{option_not_found} blank; check .env file"
   return
 end
 
