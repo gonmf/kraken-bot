@@ -241,10 +241,10 @@ loop do
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
-  price_change = current_price.nil? || daily_high_price.nil? ? 1 : current_price / daily_high_price
-  profit = current_price.nil? || avg_buy_price.nil? ? 0 : current_price / avg_buy_price - 1.0
+  profit = current_price.nil? || avg_buy_price.nil? ? '--' : (((current_price / avg_buy_price) - 1.0) * 100.0).round(1)
+  price_change = current_price.nil? || daily_high_price.nil? ? '--' : (((current_price / daily_high_price) - 1.0) * 100.0).round(1)
 
-  str = "Own: #{current_coins || 'n/a'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (#{(profit).round(1)}%), last market price: #{current_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']} (#{(price_change).round(1)}%), daily high: #{daily_high_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']}"
+  str = "Own: #{current_coins || 'n/a'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (profit #{profit}%), last market price: #{current_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']} (change #{price_change}%), daily high: #{daily_high_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']}"
 
   if str != prev_str
     puts "#{timestamp} | #{str}"
