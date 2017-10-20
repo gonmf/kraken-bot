@@ -48,7 +48,6 @@ def get_current_coin_price(client)
 
   price
 rescue Exception => e
-  puts "#{timestamp} | Exception @ get_current_coin_price"
   nil
 end
 
@@ -99,7 +98,6 @@ def get_current_coin_balance(client)
 
   balance
 rescue Exception => e
-  puts "#{timestamp} | Exception @ get_current_coin_balance"
   nil
 end
 
@@ -285,13 +283,22 @@ loop do
   # Do not cache these values forever
   daily_high_price = nil if (iteration % 4) == 0
 
-  next if open_orders?(client)
+  if open_orders?(client)
+    puts "#{timestamp} | Order pending"
+    next
+  end
 
   current_coins = get_current_coin_balance(client)
-  next if current_coins.nil?
+  if current_coins.nil?
+    puts "#{timestamp} | Failed to retrieve current #{ENV['FIAT_COMMON_NAME']} balance amount"
+    next
+  end
 
   current_price = get_current_coin_price(client)
-  next if current_price.nil?
+  if current_price.nil?
+    puts "#{timestamp} | Failed to retrieve current market value of #{ENV['COIN_COMMON_NAME']}"
+    next
+  end
 
   daily_high_price = get_daily_high(client)
   # Backup values of daily high prices
@@ -305,6 +312,8 @@ loop do
   else
     daily_high_price_bak = daily_high_price
   end
+
+  next if current_price > daily_high_price # This is impossible
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
