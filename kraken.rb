@@ -37,20 +37,23 @@ rescue Exception => e
   nil
 end
 
-def get_last_trade_price(client)
+def get_current_coin_price(client)
   ticker = client.public.ticker(ENV['TICKER_PAIR_NAME'])
   return nil if ticker.nil?
 
-  ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
+  price = ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
+
+  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
+  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+
+  price
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_last_trade_price"
+  puts "#{timestamp} | Exception @ get_current_coin_price"
   nil
 end
 
-def market_buy(client, current_price)
-  amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
-
-  puts "#{timestamp} | --- BUYING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
+def market_buy(client, amount_in_btc)
+  puts "#{timestamp} | Buying #{amount_in_btc} #{ENV['COIN_COMMON_NAME']}..."
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
@@ -59,30 +62,30 @@ def market_buy(client, current_price)
     volume: amount_in_btc
   }
 
-  client.private.add_order(order)
-
-  notify("Bought #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+#  client.private.add_order(order)
+  true
 rescue Exception => e
-  puts "#{timestamp} | API failure @ market_buy"
-  nil
+  puts "#{timestamp} | Exception @ market_buy"
+  false
 end
 
-def market_sell(client, amount_in_btc, current_price)
-  puts "#{timestamp} | --- SELLING #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} ---"
+def market_sell(client, current_coins)
+  current_coins = current_coins.round(ENV['SELL_PRICE_DECIMALS'].to_i)
+
+  puts "#{timestamp} | Selling #{current_coins} #{ENV['COIN_COMMON_NAME']}..."
 
   order = {
     pair: ENV['TRADE_PAIR_NAME'],
     type: 'sell',
     ordertype: 'market',
-    volume: amount_in_btc
+    volume: current_coins
   }
 
   client.private.add_order(order)
-
-  notify("Sold #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+  true
 rescue Exception => e
-  puts "#{timestamp} | API failure @ market_sell"
-  nil
+  puts "#{timestamp} | Exception @ market_sell"
+  false
 end
 
 def get_current_coin_balance(client)
@@ -91,9 +94,12 @@ def get_current_coin_balance(client)
 
   balance = balance.to_f.round(4)
 
-  balance < ENV['MINIMUM_COIN_AMOUNT'].to_f ? 0.0 : balance
+  balance = balance < ENV['MINIMUM_COIN_AMOUNT'].to_f ? 0.0 : balance
+  return nil if balance > ENV['REALISTIC_COIN_AMOUNT_MAX'].to_f
+
+  balance
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_current_coin_balance"
+  puts "#{timestamp} | Exception @ get_current_coin_balance"
   nil
 end
 
@@ -105,7 +111,7 @@ def open_orders?(client)
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 rescue Exception => e
-  puts "#{timestamp} | API failure @ open_orders?"
+  puts "#{timestamp} | Exception @ open_orders?"
   true
 end
 
@@ -124,9 +130,14 @@ def get_last_closed_buy_trade(client, current_coins)
 
   trade = orders.sort_by { |o| o['closetm'] }.last
 
-  [OpenStruct.new(price: trade['price'].to_f, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)]
+  price = trade['price'].to_f
+
+  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
+  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+
+  [OpenStruct.new(price: price, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)]
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_last_closed_buy_trade"
+  puts "#{timestamp} | Exception @ get_last_closed_buy_trade"
   nil
 end
 
@@ -137,9 +148,14 @@ def get_daily_high(client)
   line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
   return nil if line.nil? || line.count != 8
 
-  line[2].to_f
+  price = line[2].to_f
+
+  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
+  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+
+  price
 rescue Exception => e
-  puts "#{timestamp} | API failure @ get_daily_high"
+  puts "#{timestamp} | Exception @ get_daily_high"
   nil
 end
 
@@ -175,9 +191,14 @@ def calculate_avg_buy_price(client, current_coins)
 
   return nil if total_btc < ENV['MINIMUM_COIN_AMOUNT'].to_f
 
-  total_spent / total_btc
+  price = total_spent / total_btc
+
+  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
+  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+
+  price
 rescue Exception => e
-  puts "#{timestamp} | API failure @ calculate_avg_buy_price"
+  puts "#{timestamp} | Exception @ calculate_avg_buy_price"
   nil
 end
 
@@ -201,7 +222,11 @@ def buy(client, current_price, daily_high_price, current_coins)
     return false if current_price > last_buy.price * (ENV['BUY_POINT_SINCE_LAST'].to_f)
   end
 
-  market_buy(client, current_price)
+  amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
+
+  success = market_buy(client, amount_in_btc)
+  notify("Buy order for #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+  success
 end
 
 def sell(client, current_price, avg_buy_price, current_coins)
@@ -213,7 +238,9 @@ def sell(client, current_price, avg_buy_price, current_coins)
 
   return false if exit_value > current_price
 
-  market_sell(client, current_coins, current_price)
+  success = market_sell(client, current_coins)
+  notify("Sell order for #{current_coins} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+  success
 end
 
 STDOUT.sync = true
@@ -233,13 +260,13 @@ iteration = 0
 daily_high_price_bak = nil
 prev_str = nil
 
-option_not_found = %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].nil? }
+option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX SELL_PRICE_DECIMALS SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].nil? }
 if option_not_found
   puts "Incorrect config: #{option_not_found} missing; check .env file"
   return
 end
 
-option_not_found = %w[KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].blank? }
+option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX SELL_PRICE_DECIMALS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].blank? }
 if option_not_found
   puts "Incorrect config: #{option_not_found} blank; check .env file"
   return
@@ -263,7 +290,7 @@ loop do
   current_coins = get_current_coin_balance(client)
   next if current_coins.nil?
 
-  current_price = get_last_trade_price(client)
+  current_price = get_current_coin_price(client)
   next if current_price.nil?
 
   daily_high_price = get_daily_high(client)
@@ -291,7 +318,7 @@ loop do
     prev_str = str
   end
 
-  next if buy(client, current_price, daily_high_price, current_coins)
+  next if sell(client, current_price, avg_buy_price, current_coins)
 
-  sell(client, current_price, avg_buy_price, current_coins)
+  buy(client, current_price, daily_high_price, current_coins)
 end
