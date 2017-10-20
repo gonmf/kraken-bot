@@ -24,17 +24,22 @@ def notify(body)
     delivery_method :smtp, options
   end
 
-  mail = Mail.new do
-    from(ENV['SENDER_ADDRESS'])
-    to(ENV['DESTINATION_ADDRESS'])
-    subject('Kraken Bot Notification')
-    body(body)
-  end
+  loop do 
+    begin
+      mail = Mail.new do
+        from(ENV['SENDER_ADDRESS'])
+        to(ENV['DESTINATION_ADDRESS'])
+        subject('Kraken Bot Notification')
+        body(body)
+      end
 
-  mail.deliver!
-rescue Exception => e
-  puts "#{timestamp} | Email notification failed"
-  nil
+      mail.deliver!
+      break
+    rescue Exception => e
+      puts "#{timestamp} | Email notification failed; will try again in 1 minute..."
+      sleep(60)
+    end
+  end
 end
 
 def get_current_coin_price(client)
@@ -61,7 +66,7 @@ def market_buy(client, amount_in_btc)
     volume: amount_in_btc
   }
 
-#  client.private.add_order(order)
+  client.private.add_order(order)
   true
 rescue Exception => e
   puts "#{timestamp} | Exception @ market_buy"
@@ -109,7 +114,6 @@ def open_orders?(client)
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 rescue Exception => e
-  puts "#{timestamp} | Exception @ open_orders?"
   true
 end
 
@@ -135,7 +139,6 @@ def get_last_closed_buy_trade(client, current_coins)
 
   [OpenStruct.new(price: price, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)]
 rescue Exception => e
-  puts "#{timestamp} | Exception @ get_last_closed_buy_trade"
   nil
 end
 
@@ -153,7 +156,6 @@ def get_daily_high(client)
 
   price
 rescue Exception => e
-  puts "#{timestamp} | Exception @ get_daily_high"
   nil
 end
 
@@ -196,7 +198,6 @@ def calculate_avg_buy_price(client, current_coins)
 
   price
 rescue Exception => e
-  puts "#{timestamp} | Exception @ calculate_avg_buy_price"
   nil
 end
 
@@ -222,9 +223,8 @@ def buy(client, current_price, daily_high_price, current_coins)
 
   amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
 
-  success = market_buy(client, amount_in_btc)
   notify("Buy order for #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
-  success
+  market_buy(client, amount_in_btc)
 end
 
 def sell(client, current_price, avg_buy_price, current_coins)
@@ -236,9 +236,8 @@ def sell(client, current_price, avg_buy_price, current_coins)
 
   return false if exit_value > current_price
 
-  success = market_sell(client, current_coins)
   notify("Sell order for #{current_coins} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
-  success
+  market_sell(client, current_coins)
 end
 
 STDOUT.sync = true
@@ -269,6 +268,11 @@ if option_not_found
   puts "Incorrect config: #{option_not_found} blank; check .env file"
   return
 end
+
+# It is important this is done to ensure we don't leave the bot making bad decisions
+# and not know about it because the notifications are down.
+notify('Bot started')
+puts 'Bot started'
 
 loop do
   if ENV['HOURS_DISABLED'].split(',').map(&:to_i).include?(Time.now.hour)
@@ -313,6 +317,11 @@ loop do
     daily_high_price_bak = daily_high_price
   end
 
+  if daily_high_price.nil?
+    puts "#{timestamp} | Failed to retrieve market daily high price of #{ENV['COIN_COMMON_NAME']}"
+    next
+  end
+
   next if current_price > daily_high_price # This is impossible
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
@@ -327,7 +336,7 @@ loop do
     prev_str = str
   end
 
-  next if sell(client, current_price, avg_buy_price, current_coins)
-
-  buy(client, current_price, daily_high_price, current_coins)
+  if sell(client, current_price, avg_buy_price, current_coins) || buy(client, current_price, daily_high_price, current_coins)
+    sleep(60) # Sleep a minute between margin orders
+  end
 end
