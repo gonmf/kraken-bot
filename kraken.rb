@@ -254,6 +254,8 @@ end
 client = KrakenClient.load
 
 iteration = 0
+# Cache because of API instability
+current_price_bak = nil
 daily_high_price_bak = nil
 prev_str = nil
 
@@ -272,12 +274,13 @@ end
 # It is important this is done to ensure we don't leave the bot making bad decisions
 # and not know about it because the notifications are down.
 notify('Bot started')
-puts 'Bot started'
+puts "#{timestamp} | Bot started"
 
 loop do
   if ENV['HOURS_DISABLED'].split(',').map(&:to_i).include?(Time.now.hour)
     puts "#{timestamp} | Outside business hours"
     sleep(5 * 60) # Sleep for 5 minutes
+    current_price_bak = daily_high_price_bak = nil
     next
   end
 
@@ -285,7 +288,7 @@ loop do
   iteration += 1
 
   # Do not cache these values forever
-  daily_high_price = nil if (iteration % 4) == 0
+  current_price_bak = daily_high_price_bak = nil if (iteration % 4) == 0
 
   if open_orders?(client)
     puts "#{timestamp} | Order pending"
@@ -299,30 +302,32 @@ loop do
   end
 
   current_price = get_current_coin_price(client)
+  # Backup values of current price
   if current_price.nil?
-    puts "#{timestamp} | Failed to retrieve current market value of #{ENV['COIN_COMMON_NAME']}"
-    next
+    if current_price_bak.nil?
+      puts "#{timestamp} | Failed to retrieve current market value of #{ENV['COIN_COMMON_NAME']}"
+      next
+    else
+      current_price = current_price_bak
+    end
+  else
+    current_price_bak = current_price
   end
 
   daily_high_price = get_daily_high(client)
   # Backup values of daily high prices
   if daily_high_price.nil?
     if daily_high_price_bak.nil?
+      puts "#{timestamp} | Failed to retrieve daily high price of #{ENV['COIN_COMMON_NAME']}"
       next
     else
       daily_high_price = daily_high_price_bak
-      daily_high_price_bak = nil
     end
   else
     daily_high_price_bak = daily_high_price
   end
 
-  if daily_high_price.nil?
-    puts "#{timestamp} | Failed to retrieve market daily high price of #{ENV['COIN_COMMON_NAME']}"
-    next
-  end
-
-  next if current_price > daily_high_price # This is impossible
+  next if current_price > daily_high_price # This should be impossible
 
   avg_buy_price = calculate_avg_buy_price(client, current_coins)
 
@@ -338,5 +343,6 @@ loop do
 
   if sell(client, current_price, avg_buy_price, current_coins) || buy(client, current_price, daily_high_price, current_coins)
     sleep(60) # Sleep a minute between margin orders
+    current_price_bak = daily_high_price_bak = nil
   end
 end
