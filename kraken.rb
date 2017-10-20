@@ -291,7 +291,7 @@ loop do
   current_price_bak = daily_high_price_bak = nil if (iteration % 4) == 0
 
   if open_orders?(client)
-    puts "#{timestamp} | Order pending"
+    puts "#{timestamp} | Order pending or API failure"
     next
   end
 
