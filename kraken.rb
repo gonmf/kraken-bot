@@ -1,130 +1,12 @@
 require 'pry-byebug'
-require 'json'
-require 'net/http'
 require 'dotenv/load'
-require 'kraken_client'
-require 'mail'
+
+require_relative 'api'
+require_relative 'value_store'
+require_relative 'emailer'
 
 def timestamp
-  Time.now.strftime('%m-%d %H:%M:%S')
-end
-
-def notify(body)
-  return if %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS].any? { |config| ENV[config].blank? }
-
-  options = {
-    address: ENV['SMTP_SERVER'],
-    port: ENV['SMTP_PORT'].to_i,
-    domain: ENV['SENDER_DOMAIN'],
-    user_name: ENV['SENDER_NAME'],
-    password: ENV['SENDER_PASSWORD'],
-    authentication: 'plain',
-    enable_starttls_auto: true }
-
-  Mail.defaults do
-    delivery_method :smtp, options
-  end
-
-  loop do
-    begin
-      mail = Mail.new do
-        from(ENV['SENDER_ADDRESS'])
-        to(ENV['DESTINATION_ADDRESS'])
-        subject('Kraken Bot Notification')
-        body(body)
-      end
-
-      mail.deliver!
-      break
-    rescue Exception => e
-      puts "#{timestamp} | Email notification failed; will try again in 1 minute..."
-      sleep(60)
-    end
-  end
-end
-
-def get_closed_orders(client)
-  orders = client.private.closed_orders
-  return nil if orders.nil?
-
-  orders['closed'].values.select do |o|
-    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME']
-  end
-end
-
-def get_current_coin_price(client)
-  ticker = client.public.ticker(ENV['TICKER_PAIR_NAME'])
-  return nil if ticker.nil?
-
-  price = ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
-
-  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
-
-  price
-rescue Exception => e
-  nil
-end
-
-def market_buy(client, amount_in_btc)
-  puts "#{timestamp} | Buying #{amount_in_btc} #{ENV['COIN_COMMON_NAME']}..."
-
-  order = {
-    pair: ENV['TRADE_PAIR_NAME'],
-    type: 'buy',
-    ordertype: 'market',
-    volume: amount_in_btc
-  }
-
-  client.private.add_order(order)
-  true
-rescue Exception => e
-  puts "#{timestamp} | Exception @ market_buy"
-  false
-end
-
-def market_sell(client, current_coins)
-  current_coins = current_coins.round(ENV['SELL_PRICE_DECIMALS'].to_i)
-
-  puts "#{timestamp} | Selling #{current_coins} #{ENV['COIN_COMMON_NAME']}..."
-
-  order = {
-    pair: ENV['TRADE_PAIR_NAME'],
-    type: 'sell',
-    ordertype: 'market',
-    volume: current_coins
-  }
-
-  client.private.add_order(order)
-  true
-rescue Exception => e
-  puts "#{timestamp} | Exception @ market_sell"
-  false
-end
-
-def get_current_coin_balance(client)
-  balance = client.private.balance[ENV['BALANCE_COIN_NAME']]
-  return nil if balance.nil?
-
-  balance = balance.to_f.round(4)
-
-  balance = balance < ENV['MINIMUM_COIN_AMOUNT'].to_f ? 0.0 : balance
-  return nil if balance > ENV['REALISTIC_COIN_AMOUNT_MAX'].to_f
-
-  balance
-rescue Exception => e
-  nil
-end
-
-def open_orders?(client)
-  orders = client.private.open_orders
-  return nil if orders.nil?
-
-  orders['open'].values.any? do |h|
-    h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
-  end
-rescue Exception => e
-  nil
+  Time.now.strftime('%Y-%m-%d %H:%M:%S')
 end
 
 def get_last_closed_trade_date(closed_orders)
@@ -154,60 +36,7 @@ def get_last_closed_buy_trade_price(closed_orders, current_coins)
   price
 end
 
-def get_daily_high(client)
-  ohlc = client.public.ohlc(pair: ENV['TICKER_PAIR_NAME'], interval: 1440)
-  return nil if ohlc.nil?
-
-  line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
-  return nil if line.nil? || line.count != 8
-
-  price = line[2].to_f
-
-  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
-
-  price
-rescue Exception => e
-  nil
-end
-
-def calculate_avg_buy_price(current_coins, closed_orders)
-  return nil if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
-
-  return nil if closed_orders.nil?
-
-  orders = closed_orders.select do |o|
-    o.dig('descr', 'type') == 'buy'
-  end
-
-  idx = 0
-  total_btc = 0.0
-  total_spent = 0.0
-  while idx < orders.count
-    spent = orders[idx]['cost'].to_f
-    amount = orders[idx]['vol'].to_f
-
-    total_spent += spent
-    total_btc += amount
-
-    break if total_btc >= current_coins
-
-    idx += 1
-  end
-
-  return nil if total_btc < ENV['MINIMUM_COIN_AMOUNT'].to_f
-
-  price = total_spent / total_btc
-
-  return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-  return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
-
-  price
-rescue Exception => e
-  nil
-end
-
-def buy(client, current_price, daily_high_price, current_coins, closed_orders)
+def buy(api, emailer, current_price, daily_high_price, current_coins, closed_orders)
   return false if current_price.nil? || daily_high_price.nil? || current_coins.nil?
 
   return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
@@ -217,7 +46,11 @@ def buy(client, current_price, daily_high_price, current_coins, closed_orders)
   last_trade_date = get_last_closed_trade_date(closed_orders)
   if last_trade_date != :none
     # Do not buy if the minimum wait after a period has not elapsed
-    return false if Time.now - last_trade_date < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+    open_time = last_trade_date + ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+    if Time.now < open_time
+      puts "#{timestamp} | Cannot buy again before #{open_time.strftime('%Y-%m-%d %H:%M:%S')}"
+      return false
+    end
   end
 
   last_buy_trade_price = get_last_closed_buy_trade_price(closed_orders, current_coins)
@@ -229,11 +62,11 @@ def buy(client, current_price, daily_high_price, current_coins, closed_orders)
 
   amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
 
-  notify("Buy order for #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
-  market_buy(client, amount_in_btc)
+  emailer.post("Buy order for #{amount_in_btc} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+  api.market_buy(amount_in_btc)
 end
 
-def sell(client, current_price, avg_buy_price, current_coins)
+def sell(api, emailer, current_price, avg_buy_price, current_coins)
   return false if current_price.nil? || avg_buy_price.nil? || current_coins.nil?
 
   return false if current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
@@ -242,36 +75,52 @@ def sell(client, current_price, avg_buy_price, current_coins)
 
   return false if exit_value > current_price
 
-  notify("Sell order for #{current_coins} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
-  market_sell(client, current_coins)
+  emailer.post("Sell order for #{current_coins} #{ENV['COIN_COMMON_NAME']} @ ~#{current_price} #{ENV['FIAT_COMMON_NAME']}")
+  api.market_sell(current_coins)
+end
+
+def ratio(nominator, denominator)
+  return '---' if nominator.nil? || denominator.nil?
+
+  (((nominator / denominator) - 1.0) * 100.0).round(2)
+end
+
+def opt(obj)
+  return '---' if obj.nil?
+
+  obj.to_s
 end
 
 STDOUT.sync = true
 
-KrakenClient.configure do |config|
-  config.api_key = ENV['KRAKEN_API_KEY']
-  config.api_secret = ENV['KRAKEN_API_SECRET']
-  config.base_uri = 'https://api.kraken.com'
-  config.api_version = 0
-  config.limiter = false
-  config.tier = ENV['KRAKEN_USER_TIER'].to_i
-end
-
-client = KrakenClient.load
+api = Api.new
+emailer = Emailer.new
 
 iteration = 0
-# Cache because of API instability
-current_price_bak = nil
-daily_high_price_bak = nil
-prev_str = nil
 
-option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX SELL_PRICE_DECIMALS SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].nil? }
+# Cache because of API instability
+current_coins = ValueStore.new(nil, 1)
+current_price = ValueStore.new(nil, 3)
+daily_high_price = ValueStore.new(nil, 5)
+
+option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX
+                      SELL_PRICE_DECIMALS SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME
+                      SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS KRAKEN_API_KEY
+                      KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME
+                      TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT
+                      BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME HOURS_DISABLED
+                      POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].nil? }
 if option_not_found
   puts "Incorrect config: #{option_not_found} missing; check .env file"
   return
 end
 
-option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX SELL_PRICE_DECIMALS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT MAX_COIN_TO_HOLD BUY_WAIT_TIME POLL_INTERVAL MINIMUM_COIN_AMOUNT].find { |config| ENV[config].blank? }
+option_not_found = %w[REALISTIC_PRICE_RANGE_MIN REALISTIC_PRICE_RANGE_MAX REALISTIC_COIN_AMOUNT_MAX
+                      SELL_PRICE_DECIMALS KRAKEN_API_KEY KRAKEN_API_SECRET KRAKEN_USER_TIER
+                      COIN_COMMON_NAME FIAT_COMMON_NAME TRADE_PAIR_NAME TICKER_PAIR_NAME
+                      BALANCE_COIN_NAME BUY_IN_AMOUNT BUY_POINT BUY_POINT_SINCE_LAST SELL_POINT
+                      MAX_COIN_TO_HOLD BUY_WAIT_TIME POLL_INTERVAL
+                      MINIMUM_COIN_AMOUNT].find { |config| ENV[config].blank? }
 if option_not_found
   puts "Incorrect config: #{option_not_found} blank; check .env file"
   return
@@ -279,7 +128,7 @@ end
 
 # It is important this is done to ensure we don't leave the bot making bad decisions
 # and not know about it because the notifications are down.
-notify('Bot started')
+emailer.post('Bot started')
 puts "#{timestamp} | Bot started"
 
 loop do
@@ -296,67 +145,52 @@ loop do
   # Do not cache these values forever
   current_price_bak = daily_high_price_bak = nil if (iteration % 4) == 0
 
-  open_orders = open_orders?(client)
+  open_orders = api.open_orders?
   if open_orders.nil? || open_orders
     puts "#{timestamp} | Order pending" if open_orders
     puts "#{timestamp} | Failed to retrieve open orders" if open_orders.nil?
     next
   end
 
-  current_coins = get_current_coin_balance(client)
-  if current_coins.nil?
+  current_coins.set(api.get_current_coin_balance)
+  if current_coins.unset?
     puts "#{timestamp} | Failed to retrieve current #{ENV['FIAT_COMMON_NAME']} balance amount"
     next
   end
 
-  current_price = get_current_coin_price(client)
-  # Backup values of current price
-  if current_price.nil?
-    if current_price_bak.nil?
-      puts "#{timestamp} | Failed to retrieve current market value of #{ENV['COIN_COMMON_NAME']}"
-      next
-    else
-      current_price = current_price_bak
-    end
-  else
-    current_price_bak = current_price
+  current_price.set(api.get_current_coin_price)
+  if current_price.unset?
+    puts "#{timestamp} | Failed to retrieve current market value of #{ENV['COIN_COMMON_NAME']}"
+    next
   end
 
-  daily_high_price = get_daily_high(client)
-  # Backup values of daily high prices
-  if daily_high_price.nil?
-    if daily_high_price_bak.nil?
-      puts "#{timestamp} | Failed to retrieve daily high price of #{ENV['COIN_COMMON_NAME']}"
-      next
-    else
-      daily_high_price = daily_high_price_bak
-    end
-  else
-    daily_high_price_bak = daily_high_price
+  daily_high_price.set(api.get_daily_high)
+  if daily_high_price.unset?
+    puts "#{timestamp} | Failed to retrieve daily high price of #{ENV['COIN_COMMON_NAME']}"
+    next
   end
 
-  next if current_price > daily_high_price # This should be impossible
+  next if current_price.get > daily_high_price.get # This should be impossible
 
-  closed_orders = get_closed_orders(client)
+  closed_orders = api.get_closed_orders
   if closed_orders.nil?
     puts "#{timestamp} | Failed to retrieve closed orders"
     next
   end
 
-  avg_buy_price = calculate_avg_buy_price(current_coins, closed_orders)
+  avg_buy_price = api.calculate_avg_buy_price(current_coins.get, closed_orders)
 
-  profit = current_price.nil? || avg_buy_price.nil? ? '---' : (((current_price / avg_buy_price) - 1.0) * 100.0).round(1)
-  price_change = current_price.nil? || daily_high_price.nil? ? '---' : (((current_price / daily_high_price) - 1.0) * 100.0).round(1)
+  profit = ratio(current_price.get, avg_buy_price)
+  price_chg = ratio(current_price.get, daily_high_price.get)
 
-  str = "Own: #{current_coins || '---'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || '---'} (profit #{profit}%), last market price: #{current_price || '---'} #{ENV['FIAT_COMMON_NAME']} (change #{price_change}%), daily high: #{daily_high_price || '---'} #{ENV['FIAT_COMMON_NAME']}"
+  puts "#{timestamp} | Balance: #{opt(current_coins.get)} #{ENV['COIN_COMMON_NAME']} @ " +
+       "#{opt(avg_buy_price)} #{ENV['FIAT_COMMON_NAME']} (#{profit}%), market price now / high: " +
+       "#{opt(current_price.get)} / #{opt(daily_high_price.get)} #{ENV['FIAT_COMMON_NAME']} (#{price_chg}%)"
 
-  if str != prev_str
-    puts "#{timestamp} | #{str}"
-    prev_str = str
-  end
-
-  if sell(client, current_price, avg_buy_price, current_coins) || buy(client, current_price, daily_high_price, current_coins, closed_orders)
-    sleep(60) # Sleep a minute between margin orders
-    current_price_bak = daily_high_price_bak = nil
+  if sell(api, emailer, current_price.get, avg_buy_price, current_coins.get) ||
+     buy(api, emailer, current_price.get, daily_high_price.get, current_coins.get, closed_orders)
+    sleep(10)
+    current_coins.unset!
+    current_price.unset!
   end
 end

@@ -4,6 +4,8 @@ It keeps buying small amounts when the value drops a certain percentage amount, 
 
 It sells everything when the entire coin holdings have risen in price a certain percentage amount.
 
+Since it buys and sells using margin orders you can expect some deviation from the profit margin and buy points set.
+
 ```ruby
 bundle install
 
