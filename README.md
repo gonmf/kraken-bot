@@ -13,3 +13,5 @@ vi .env
 
 bundle exec ruby kraken.rb
 ```
+
+Always run the latest version, I am not responsible for you losing your money.
