@@ -21,6 +21,8 @@ class Api
     orders['closed'].values.select do |o|
       o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME']
     end
+  rescue Exception => e
+    nil
   end
 
   def get_current_coin_price
