@@ -12,19 +12,20 @@ end
 def notify(body)
   return if %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS DESTINATION_ADDRESS].any? { |config| ENV[config].blank? }
 
-  options = { :address              => ENV['SMTP_SERVER'],
-              :port                 => ENV['SMTP_PORT'],
-              :domain               => ENV['SENDER_DOMAIN'],
-              :user_name            => ENV['SENDER_NAME'],
-              :password             => ENV['SENDER_PASSWORD'],
-              :authentication       => 'plain',
-              :enable_starttls_auto => true }
+  options = {
+    address: ENV['SMTP_SERVER'],
+    port: ENV['SMTP_PORT'].to_i,
+    domain: ENV['SENDER_DOMAIN'],
+    user_name: ENV['SENDER_NAME'],
+    password: ENV['SENDER_PASSWORD'],
+    authentication: 'plain',
+    enable_starttls_auto: true }
 
   Mail.defaults do
     delivery_method :smtp, options
   end
 
-  loop do 
+  loop do
     begin
       mail = Mail.new do
         from(ENV['SENDER_ADDRESS'])
@@ -39,6 +40,15 @@ def notify(body)
       puts "#{timestamp} | Email notification failed; will try again in 1 minute..."
       sleep(60)
     end
+  end
+end
+
+def get_closed_orders(client)
+  orders = client.private.closed_orders
+  return nil if orders.nil?
+
+  orders['closed'].values.select do |o|
+    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME']
   end
 end
 
@@ -108,38 +118,40 @@ end
 
 def open_orders?(client)
   orders = client.private.open_orders
-  return true if orders.nil?
+  return nil if orders.nil?
 
   orders['open'].values.any? do |h|
     h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
   end
 rescue Exception => e
-  true
+  nil
 end
 
-def get_last_closed_buy_trade(client, current_coins)
-  return [] if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
+def get_last_closed_trade_date(closed_orders)
+  return :none unless closed_orders.any?
 
-  orders = client.private.closed_orders
-  return nil if orders.nil?
+  last_order = closed_orders.sort_by { |o| o['closetm'] }.last
 
-  orders = orders['closed'].values.select do |o|
-    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy'
+  DateTime.strptime(last_order['closetm'].to_i.to_s, '%s').to_time
+end
+
+def get_last_closed_buy_trade_price(closed_orders, current_coins)
+  return :none if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
+
+  orders = closed_orders.select do |o|
+    o.dig('descr', 'type') == 'buy'
   end
 
-  return [] unless orders.any?
+  return :none unless orders.any?
 
-  trade = orders.sort_by { |o| o['closetm'] }.last
+  last_order = orders.sort_by { |o| o['closetm'] }.last
 
-  price = trade['price'].to_f
+  price = last_order['price'].to_f
 
   return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
   return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
 
-  [OpenStruct.new(price: price, time: DateTime.strptime(trade['closetm'].to_i.to_s, '%s').to_time)]
-rescue Exception => e
-  nil
+  price
 end
 
 def get_daily_high(client)
@@ -159,18 +171,14 @@ rescue Exception => e
   nil
 end
 
-def calculate_avg_buy_price(client, current_coins)
+def calculate_avg_buy_price(current_coins, closed_orders)
   return nil if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
 
-  orders = client.private.closed_orders
-  return nil if orders.nil?
+  return nil if closed_orders.nil?
 
-  orders = orders['closed'].values.select do |o|
-    o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] &&
-      o.dig('descr', 'type') == 'buy'
+  orders = closed_orders.select do |o|
+    o.dig('descr', 'type') == 'buy'
   end
-
-  return nil unless orders.any?
 
   idx = 0
   total_btc = 0.0
@@ -179,12 +187,10 @@ def calculate_avg_buy_price(client, current_coins)
     spent = orders[idx]['cost'].to_f
     amount = orders[idx]['vol'].to_f
 
-    break if total_btc + amount > current_coins
-
     total_spent += spent
     total_btc += amount
 
-    break if total_btc == current_coins
+    break if total_btc >= current_coins
 
     idx += 1
   end
@@ -201,24 +207,24 @@ rescue Exception => e
   nil
 end
 
-def buy(client, current_price, daily_high_price, current_coins)
+def buy(client, current_price, daily_high_price, current_coins, closed_orders)
   return false if current_price.nil? || daily_high_price.nil? || current_coins.nil?
 
   return false if current_coins >= ENV['MAX_COIN_TO_HOLD'].to_f
 
   return false if current_price > daily_high_price * (ENV['BUY_POINT'].to_f)
 
-  last_buys = get_last_closed_buy_trade(client, current_coins)
-  return false if last_buys.nil?
-
-  if last_buys.any?
-    last_buy = last_buys.first
-
+  last_trade_date = get_last_closed_trade_date(closed_orders)
+  if last_trade_date != :none
     # Do not buy if the minimum wait after a period has not elapsed
-    return false if Time.now - last_buy.time < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+    return false if Time.now - last_trade_date < ENV['BUY_WAIT_TIME'].to_i * 60 * 60
+  end
 
+  last_buy_trade_price = get_last_closed_buy_trade_price(closed_orders, current_coins)
+  return false if last_buy_trade_price.nil? # API error
+  if last_buy_trade_price != :none # trade found
     # Do not buy if the price hasn't fallen since the last buy price
-    return false if current_price > last_buy.price * (ENV['BUY_POINT_SINCE_LAST'].to_f)
+    return false if current_price > last_buy_trade_price * (ENV['BUY_POINT_SINCE_LAST'].to_f)
   end
 
   amount_in_btc = ENV['BUY_IN_AMOUNT'].to_f
@@ -290,8 +296,10 @@ loop do
   # Do not cache these values forever
   current_price_bak = daily_high_price_bak = nil if (iteration % 4) == 0
 
-  if open_orders?(client)
-    puts "#{timestamp} | Order pending or API failure"
+  open_orders = open_orders?(client)
+  if open_orders.nil? || open_orders
+    puts "#{timestamp} | Order pending" if open_orders
+    puts "#{timestamp} | Failed to retrieve open orders" if open_orders.nil?
     next
   end
 
@@ -329,19 +337,25 @@ loop do
 
   next if current_price > daily_high_price # This should be impossible
 
-  avg_buy_price = calculate_avg_buy_price(client, current_coins)
+  closed_orders = get_closed_orders(client)
+  if closed_orders.nil?
+    puts "#{timestamp} | Failed to retrieve closed orders"
+    next
+  end
 
-  profit = current_price.nil? || avg_buy_price.nil? ? '--' : (((current_price / avg_buy_price) - 1.0) * 100.0).round(1)
-  price_change = current_price.nil? || daily_high_price.nil? ? '--' : (((current_price / daily_high_price) - 1.0) * 100.0).round(1)
+  avg_buy_price = calculate_avg_buy_price(current_coins, closed_orders)
 
-  str = "Own: #{current_coins || 'n/a'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || 'n/a'} (profit #{profit}%), last market price: #{current_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']} (change #{price_change}%), daily high: #{daily_high_price || 'n/a'} #{ENV['FIAT_COMMON_NAME']}"
+  profit = current_price.nil? || avg_buy_price.nil? ? '---' : (((current_price / avg_buy_price) - 1.0) * 100.0).round(1)
+  price_change = current_price.nil? || daily_high_price.nil? ? '---' : (((current_price / daily_high_price) - 1.0) * 100.0).round(1)
+
+  str = "Own: #{current_coins || '---'} #{ENV['COIN_COMMON_NAME']}, avg buy price: #{avg_buy_price || '---'} (profit #{profit}%), last market price: #{current_price || '---'} #{ENV['FIAT_COMMON_NAME']} (change #{price_change}%), daily high: #{daily_high_price || '---'} #{ENV['FIAT_COMMON_NAME']}"
 
   if str != prev_str
     puts "#{timestamp} | #{str}"
     prev_str = str
   end
 
-  if sell(client, current_price, avg_buy_price, current_coins) || buy(client, current_price, daily_high_price, current_coins)
+  if sell(client, current_price, avg_buy_price, current_coins) || buy(client, current_price, daily_high_price, current_coins, closed_orders)
     sleep(60) # Sleep a minute between margin orders
     current_price_bak = daily_high_price_bak = nil
   end
