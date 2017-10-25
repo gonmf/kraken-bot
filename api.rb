@@ -1,7 +1,8 @@
 require 'kraken_client'
 
 class Api
-  def initialize(cfg)
+  def initialize(logger, cfg)
+    @logger = logger
     @cfg = cfg
 
     KrakenClient.configure do |config|
@@ -27,54 +28,85 @@ class Api
     nil
   end
 
-  def get_current_coin_price
-    ticker = @client.public.ticker(@cfg.get(:ticker_pair_name))
-    return nil if ticker.nil?
+  def refresh_limit_buy(amount_in_btc, daily_high_price, avg_buy_price, buy_point)
+    reference_price = avg_buy_price.nil? ? daily_high_price : avg_buy_price
+    buy_price = reference_price * buy_point
 
-    price = ticker[@cfg.get(:ticker_pair_name)]['c'][0].to_f
-
-    return nil if price < @cfg.get(:realistic_price_range_min).to_f
-    return nil if price > @cfg.get(:realistic_price_range_max).to_f
-
-    price
-  rescue Exception => e
-    nil
-  end
-
-  def market_buy(amount_in_btc)
-    puts "#{timestamp} | Buying #{amount_in_btc} #{@cfg.get(:coin_common_name)}..."
-
-    order = {
-      pair: @cfg.get(:trade_pair_name),
-      type: 'buy',
-      ordertype: 'market',
-      volume: amount_in_btc
+    options = {
+      amount_in_btc: amount_in_btc,
+      buy_price: buy_price
     }
 
-    @client.private.add_order(order)
+    return false if @prev_buy_options == options
+
+    cancel_limit_buy_orders
+
+    loop do
+      @logger.log "Setting buy limit order at #{buy_price}..."
+      add_limit_buy_order(amount_in_btc, buy_price)
+      break if synchronous_get_open_limit_orders('buy').count == 1
+    end
+
+    @logger.log 'Buy limit order updated'
+    @prev_buy_options = options
     true
   rescue Exception => e
-    puts "#{timestamp} | Exception @ market_buy"
-    false
+    @logger.log 'Exception @ limit_buy'
+    true
   end
 
-  def market_sell(current_coins)
-    current_coins = current_coins.round(@cfg.get(:sell_price_decimals).to_i)
+  def refresh_limit_sell(current_coins, avg_buy_price, sell_point)
+    sell_price = avg_buy_price * sell_point
 
-    puts "#{timestamp} | Selling #{current_coins} #{@cfg.get(:coin_common_name)}..."
-
-    order = {
-      pair: @cfg.get(:trade_pair_name),
-      type: 'sell',
-      ordertype: 'market',
-      volume: current_coins
+    options = {
+      current_coins: current_coins,
+      sell_price: sell_price
     }
 
-    @client.private.add_order(order)
+    return false if @prev_sell_options == options
+
+    cancel_limit_sell_orders
+
+    loop do
+      @logger.log "Setting sell limit order at #{sell_price}..."
+      add_limit_sell_order(current_coins, sell_price)
+      break if synchronous_get_open_limit_orders('sell').count == 1
+    end
+
+    @logger.log 'Sell limit order updated'
+    @prev_sell_options = options
     true
   rescue Exception => e
-    puts "#{timestamp} | Exception @ market_sell"
-    false
+    @logger.log 'Exception @ limit_sell'
+    true
+  end
+
+  def cancel_limit_buy_orders
+    @logger.log 'Clearing past buy limit orders...'
+    loop do
+      orders = synchronous_get_open_limit_orders('buy')
+      break if orders.count == 0
+
+      @logger.log "#{orders.count} orders remaining..."
+      clear_limit_orders(orders)
+    end
+  rescue Exception => e
+    @logger.log 'Exception @ cancel_limit_buy_orders'
+    true
+  end
+
+  def cancel_limit_sell_orders
+    @logger.log 'Clearing past sell limit orders...'
+    loop do
+      orders = synchronous_get_open_limit_orders('sell')
+      break if orders.count == 0
+
+      @logger.log "#{orders.count} orders remaining..."
+      clear_limit_orders(orders)
+    end
+  rescue Exception => e
+    @logger.log 'Exception @ cancel_limit_sell_orders'
+    true
   end
 
   def get_current_coin_balance
@@ -87,17 +119,6 @@ class Api
     return nil if balance > @cfg.get(:realistic_coin_amount_max).to_f
 
     balance
-  rescue Exception => e
-    nil
-  end
-
-  def open_orders?
-    orders = @client.private.open_orders
-    return nil if orders.nil?
-
-    orders['open'].values.any? do |h|
-      h.dig('descr', 'pair') == @cfg.get(:trade_pair_name) && h.dig('descr', 'ordertype') == 'market'
-    end
   rescue Exception => e
     nil
   end
@@ -120,9 +141,7 @@ class Api
   end
 
   def calculate_avg_buy_price(current_coins, closed_orders)
-    return nil if current_coins.nil? || current_coins < @cfg.get(:minimum_coin_amount).to_f
-
-    return nil if closed_orders.nil?
+    return nil if current_coins < @cfg.get(:minimum_coin_amount).to_f
 
     orders = closed_orders.select do |o|
       o.dig('descr', 'type') == 'buy'
@@ -151,5 +170,67 @@ class Api
     price
   rescue Exception => e
     nil
+  end
+
+  private
+
+  def clear_limit_orders(orders) # Synchronous
+    orders.each do |order|
+      begin
+        @client.private.cancel_order(txid: order.dig('userref'))
+      rescue Exception => e
+      end
+      sleep(1)
+    end
+  end
+
+  def add_limit_buy_order(amount_in_btc, buy_price)
+    order = {
+      pair: @cfg.get(:trade_pair_name),
+      type: 'buy',
+      ordertype: 'limit',
+      price: buy_price.round(@cfg.get(:trade_price_decimals)),
+      volume: amount_in_btc.round(@cfg.get(:trade_price_decimals)),
+      userref: rand(1..(2**31-1))
+    }
+
+    @client.private.add_order(order)
+  rescue Exception => e
+    @logger.log 'Exception @ add_limit_buy_order'
+  end
+
+  def add_limit_sell_order(current_coins, sell_price)
+    order = {
+      pair: @cfg.get(:trade_pair_name),
+      type: 'sell',
+      ordertype: 'limit',
+      price: sell_price.round(@cfg.get(:trade_price_decimals)),
+      volume: current_coins.round(@cfg.get(:trade_price_decimals)),
+      userref: rand(1..(2**31-1))
+    }
+
+    @client.private.add_order(order)
+  rescue Exception => e
+    @logger.log 'Exception @ add_limit_sell_order'
+  end
+
+  def synchronous_get_open_limit_orders(type)
+    sleep(1)
+    loop do
+      begin
+        orders = @client.private.open_orders
+        if orders.nil?
+          sleep(10)
+          next
+        end
+
+        return orders['open'].values.select do |h|
+          h.dig('descr', 'pair') == @cfg.get(:trade_pair_name) && h.dig('descr', 'ordertype') == 'limit' &&
+            h.dig('descr', 'type') == type && h.dig('userref') != nil && h.dig('status') == 'open'
+        end
+      rescue Exception => e
+        sleep(10)
+      end
+    end
   end
 end

@@ -25,62 +25,26 @@ balance_coin_name: XXBT
 # Trading related
 #################
 
-# Amount of coins to buy each time (at market value)
+# Amount of coins to buy each time
 buy_in_amount: 0.01
 
-# Percentage of daily high at which to buy more coins
+# Percentage of daily high at which to buy the first coins; or percentage of average coin price at
+# which to buy more coins
 buy_point: 0.97
 
-# Percentage of previous buy at which to buy more
-# The idea is this: before a big crash there usually is a big increase in price; the asset
-# is overvalued. It is then best to wait more before buying; and then be more liberal in
-# reenforcing the position.
-buy_point_since_last: 0.99
-
-# Percentage relative to average value of coins bought, at which to sell them all (at market value)
+# Percentage of average cost price at which to sell them
 sell_point: 1.05
 
 # Max amount of cryptocurrency to hold in Kraken
 max_coin_to_hold: 0.2
 
-# Wait time after a buy, in hours, before being allowed to buy more
-buy_wait_time: 8
-
-# What hours of the day should the bot be disabled (optional)
-# Example value: 23,24,0,1,2,3,4,5,6,7,8
-hours_disabled:
-
-
-# Buy/sell notifications by email (optional)
-############################################
-
-# Make sure the email service isn't blocking "unsafe access" like gmail does
-
-# Email address of sender
-sender_address: 
-# Email service account name; is usually the same as email address of sender
-sender_name: 
-# Email address domain, is usually the part of the address after the @
-sender_domain: 
-# Sender email account password; will be sent securely
-sender_password: 
-# Destination email address
-destination_address: 
-# SMTP server configuration; only plain text auth is available
-smtp_server: smtp.?
-smtp_port: 587
-
 
 # Probably needs no editing
 ###########################
-
-# Interval in seconds between rounds at buying or selling. You can adapt this to your kraken user
-# tier, but it's not important
-poll_interval: 12
 
 # Minimum significant coin account; bellow this amount consider the balance 0; just for operational
 # purposes - do not edit
 minimum_coin_amount: 0.0001
 
 # When selling, amount of decimals to round value at
-sell_price_decimals: 4
+trade_price_decimals: 4
