@@ -1,9 +1,11 @@
-# Cryptocurrency trading bot for kraken exchange
+# Cryptocurrency trading bot for kraken.com bitcoin exchange
 
 It first buys when the current value drops relative to the daily high value. It keeps buying more
 if the price drops relative to the average price of the coins held.
 
 It sells everything at a markup relative to the average coin price.
+
+In short it assumes a mean reversion of the asset, and reinforces positions that fall further.
 
 It buys and sells using upper and lower limit orders. It needs to be able to cancel past orders,
 so avoid setting other limit orders manually, because those are not recorded with user-defined
