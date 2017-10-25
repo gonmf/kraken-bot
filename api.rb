@@ -1,14 +1,16 @@
 require 'kraken_client'
 
 class Api
-  def initialize
+  def initialize(cfg)
+    @cfg = cfg
+
     KrakenClient.configure do |config|
-      config.api_key = ENV['KRAKEN_API_KEY']
-      config.api_secret = ENV['KRAKEN_API_SECRET']
+      config.api_key = @cfg.get(:kraken_api_key)
+      config.api_secret = @cfg.get(:kraken_api_secret)
       config.base_uri = 'https://api.kraken.com'
       config.api_version = 0
       config.limiter = false
-      config.tier = ENV['KRAKEN_USER_TIER'].to_i
+      config.tier = @cfg.get(:kraken_user_tier).to_i
     end
 
     @client = KrakenClient.load
@@ -19,20 +21,20 @@ class Api
     return nil if orders.nil?
 
     orders['closed'].values.select do |o|
-      o['status'] == 'closed' && o.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME']
+      o['status'] == 'closed' && o.dig('descr', 'pair') == @cfg.get(:trade_pair_name)
     end
   rescue Exception => e
     nil
   end
 
   def get_current_coin_price
-    ticker = @client.public.ticker(ENV['TICKER_PAIR_NAME'])
+    ticker = @client.public.ticker(@cfg.get(:ticker_pair_name))
     return nil if ticker.nil?
 
-    price = ticker[ENV['TICKER_PAIR_NAME']]['c'][0].to_f
+    price = ticker[@cfg.get(:ticker_pair_name)]['c'][0].to_f
 
-    return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-    return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+    return nil if price < @cfg.get(:realistic_price_range_min).to_f
+    return nil if price > @cfg.get(:realistic_price_range_max).to_f
 
     price
   rescue Exception => e
@@ -40,10 +42,10 @@ class Api
   end
 
   def market_buy(amount_in_btc)
-    puts "#{timestamp} | Buying #{amount_in_btc} #{ENV['COIN_COMMON_NAME']}..."
+    puts "#{timestamp} | Buying #{amount_in_btc} #{@cfg.get(:coin_common_name)}..."
 
     order = {
-      pair: ENV['TRADE_PAIR_NAME'],
+      pair: @cfg.get(:trade_pair_name),
       type: 'buy',
       ordertype: 'market',
       volume: amount_in_btc
@@ -57,12 +59,12 @@ class Api
   end
 
   def market_sell(current_coins)
-    current_coins = current_coins.round(ENV['SELL_PRICE_DECIMALS'].to_i)
+    current_coins = current_coins.round(@cfg.get(:sell_price_decimals).to_i)
 
-    puts "#{timestamp} | Selling #{current_coins} #{ENV['COIN_COMMON_NAME']}..."
+    puts "#{timestamp} | Selling #{current_coins} #{@cfg.get(:coin_common_name)}..."
 
     order = {
-      pair: ENV['TRADE_PAIR_NAME'],
+      pair: @cfg.get(:trade_pair_name),
       type: 'sell',
       ordertype: 'market',
       volume: current_coins
@@ -76,13 +78,13 @@ class Api
   end
 
   def get_current_coin_balance
-    balance = @client.private.balance[ENV['BALANCE_COIN_NAME']]
+    balance = @client.private.balance[@cfg.get(:balance_coin_name)]
     return nil if balance.nil?
 
     balance = balance.to_f.round(4)
 
-    balance = balance < ENV['MINIMUM_COIN_AMOUNT'].to_f ? 0.0 : balance
-    return nil if balance > ENV['REALISTIC_COIN_AMOUNT_MAX'].to_f
+    balance = balance < @cfg.get(:minimum_coin_amount).to_f ? 0.0 : balance
+    return nil if balance > @cfg.get(:realistic_coin_amount_max).to_f
 
     balance
   rescue Exception => e
@@ -94,23 +96,23 @@ class Api
     return nil if orders.nil?
 
     orders['open'].values.any? do |h|
-      h.dig('descr', 'pair') == ENV['TRADE_PAIR_NAME'] && h.dig('descr', 'ordertype') == 'market'
+      h.dig('descr', 'pair') == @cfg.get(:trade_pair_name) && h.dig('descr', 'ordertype') == 'market'
     end
   rescue Exception => e
     nil
   end
 
   def get_daily_high
-    ohlc = @client.public.ohlc(pair: ENV['TICKER_PAIR_NAME'], interval: 1440)
+    ohlc = @client.public.ohlc(pair: @cfg.get(:ticker_pair_name), interval: 1440)
     return nil if ohlc.nil?
 
-    line = ohlc[ENV['TICKER_PAIR_NAME']]&.last
+    line = ohlc[@cfg.get(:ticker_pair_name)]&.last
     return nil if line.nil? || line.count != 8
 
     price = line[2].to_f
 
-    return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-    return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+    return nil if price < @cfg.get(:realistic_price_range_min).to_f
+    return nil if price > @cfg.get(:realistic_price_range_max).to_f
 
     price
   rescue Exception => e
@@ -118,7 +120,7 @@ class Api
   end
 
   def calculate_avg_buy_price(current_coins, closed_orders)
-    return nil if current_coins.nil? || current_coins < ENV['MINIMUM_COIN_AMOUNT'].to_f
+    return nil if current_coins.nil? || current_coins < @cfg.get(:minimum_coin_amount).to_f
 
     return nil if closed_orders.nil?
 
@@ -139,12 +141,12 @@ class Api
       idx += 1
     end
 
-    return nil if total_btc < ENV['MINIMUM_COIN_AMOUNT'].to_f
+    return nil if total_btc < @cfg.get(:minimum_coin_amount).to_f
 
     price = total_spent / total_btc
 
-    return nil if price < ENV['REALISTIC_PRICE_RANGE_MIN'].to_f
-    return nil if price > ENV['REALISTIC_PRICE_RANGE_MAX'].to_f
+    return nil if price < @cfg.get(:realistic_price_range_min).to_f
+    return nil if price > @cfg.get(:realistic_price_range_max).to_f
 
     price
   rescue Exception => e
