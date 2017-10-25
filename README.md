@@ -19,7 +19,7 @@ vi config.yml
 bundle exec ruby kraken.rb
 ```
 
-If the `config.yml` file is edited, the configuration will updated without having to restart the program.
+If the `config.yml` file is edited, the configuration will update without having to restart the program.
 
 **Warnings**
 
