@@ -1,10 +1,13 @@
 # Cryptocurrency trading bot for kraken exchange
 
-It keeps buying small amounts when the value drops a certain percentage amount, relative to the average price for the last 24 hours. It waits some hours and further price drops before successive buys.
+It first buys when the current value drops relative to the daily high value. It keeps buying more
+if the price drops relative to the average price of the coins held.
 
-It sells everything when the entire coin holdings have risen in price a certain percentage amount.
+It sells everything at a markup relative to the average coin price.
 
-Since it buys and sells using margin orders you can expect some deviation from the profit margin and buy points set.
+It buys and sells using upper and lower limit orders. It needs to be able to cancel past orders,
+so avoid setting other limit orders manually, because those are not recorded with user-defined
+identifiers.
 
 ```bash
 bundle install
@@ -18,8 +21,10 @@ bundle exec ruby kraken.rb
 
 If the `config.yml` file is edited, the configuration will updated without having to restart the program.
 
-For the good behavior of the program it is best for it to have sole control of the account (no third party buying and selling).
-If the account is shared, at least avoid selling small amounts. The program goes through the last buy orders to try to
-come up with an average entry position of the coins held.
+**Warnings**
+
+Since limit orders are used, there is the possibility that an order is only partially fulfilled.
+
+Avoid using manually-set limit orders in the same account the program is running on.
 
 Always run the latest version, I am not responsible for you losing your money.
