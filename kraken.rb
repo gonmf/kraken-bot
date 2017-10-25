@@ -7,25 +7,23 @@ require_relative 'api'
 def refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, current_coins)
   if current_coins >= cfg.get(:max_coin_to_hold).to_f
     api.cancel_limit_buy_orders
-    return false
+    return
   end
 
   needed = api.refresh_limit_buy(cfg.get(:buy_in_amount).to_f, daily_high_price, avg_buy_price,
                                  cfg.get(:buy_point).to_f)
   logger.log 'Buy limit order update not needed' unless needed
-  needed
 end
 
 def refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins)
   if avg_buy_price.nil? || current_coins < cfg.get(:minimum_coin_amount).to_f
     api.cancel_limit_sell_orders
-    return false
+    return
   end
 
   needed = api.refresh_limit_sell(current_coins, avg_buy_price, cfg.get(:sell_point).to_f)
 
   logger.log 'Sell limit order update not needed' unless needed
-  needed
 end
 
 def opt(obj)
@@ -73,7 +71,6 @@ loop do
        "#{opt(avg_buy_price)} #{cfg.get(:fiat_common_name)}, market daily high: " +
        "#{daily_high_price} #{cfg.get(:fiat_common_name)}"
 
-  new_orders_set = refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, current_coins)
-  new_orders_set = refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins) || new_orders_set
-  logger.log 'New limit orders set' if new_orders_set
+  refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, current_coins)
+  refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins)
 end

@@ -26,7 +26,7 @@ balance_coin_name: XXBT
 #################
 
 # Amount of coins to buy each time
-buy_in_amount: 0.01
+buy_in_amount: 0.1
 
 # Percentage of daily high at which to buy the first coins; or percentage of average coin price at
 # which to buy more coins
@@ -36,15 +36,15 @@ buy_point: 0.97
 sell_point: 1.05
 
 # Max amount of cryptocurrency to hold in Kraken
-max_coin_to_hold: 0.2
+max_coin_to_hold: 1.0
 
 
 # Probably needs no editing
 ###########################
 
-# Minimum significant coin account; bellow this amount consider the balance 0; just for operational
-# purposes - do not edit
-minimum_coin_amount: 0.0001
+# Minimum significant coin account; bellow this amount consider the balance 0
+minimum_coin_amount: 0.001
 
-# When selling, amount of decimals to round value at
-trade_price_decimals: 4
+# When trading, round amounts and prices to these decimal cases
+coin_decimals: 3
+currency_decimals: 1

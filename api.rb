@@ -30,7 +30,7 @@ class Api
 
   def refresh_limit_buy(amount_in_btc, daily_high_price, avg_buy_price, buy_point)
     reference_price = avg_buy_price.nil? ? daily_high_price : avg_buy_price
-    buy_price = reference_price * buy_point
+    buy_price = (reference_price * buy_point).round(@cfg.get(:currency_decimals))
 
     options = {
       amount_in_btc: amount_in_btc,
@@ -56,7 +56,7 @@ class Api
   end
 
   def refresh_limit_sell(current_coins, avg_buy_price, sell_point)
-    sell_price = avg_buy_price * sell_point
+    sell_price = (avg_buy_price * sell_point).round(@cfg.get(:currency_decimals))
 
     options = {
       current_coins: current_coins,
@@ -113,7 +113,7 @@ class Api
     balance = @client.private.balance[@cfg.get(:balance_coin_name)]
     return nil if balance.nil?
 
-    balance = balance.to_f.round(4)
+    balance = balance.to_f.round(@cfg.get(:coin_decimals))
 
     balance = balance < @cfg.get(:minimum_coin_amount).to_f ? 0.0 : balance
     return nil if balance > @cfg.get(:realistic_coin_amount_max).to_f
@@ -130,7 +130,7 @@ class Api
     line = ohlc[@cfg.get(:ticker_pair_name)]&.last
     return nil if line.nil? || line.count != 8
 
-    price = line[2].to_f
+    price = line[2].to_f.round(@cfg.get(:currency_decimals))
 
     return nil if price < @cfg.get(:realistic_price_range_min).to_f
     return nil if price > @cfg.get(:realistic_price_range_max).to_f
@@ -162,7 +162,7 @@ class Api
 
     return nil if total_btc < @cfg.get(:minimum_coin_amount).to_f
 
-    price = total_spent / total_btc
+    price = (total_spent / total_btc).round(@cfg.get(:currency_decimals))
 
     return nil if price < @cfg.get(:realistic_price_range_min).to_f
     return nil if price > @cfg.get(:realistic_price_range_max).to_f
@@ -189,8 +189,8 @@ class Api
       pair: @cfg.get(:trade_pair_name),
       type: 'buy',
       ordertype: 'limit',
-      price: buy_price.round(@cfg.get(:trade_price_decimals)),
-      volume: amount_in_btc.round(@cfg.get(:trade_price_decimals)),
+      price: buy_price,
+      volume: amount_in_btc,
       userref: rand(1..(2**31-1))
     }
 
@@ -204,8 +204,8 @@ class Api
       pair: @cfg.get(:trade_pair_name),
       type: 'sell',
       ordertype: 'limit',
-      price: sell_price.round(@cfg.get(:trade_price_decimals)),
-      volume: current_coins.round(@cfg.get(:trade_price_decimals)),
+      price: sell_price,
+      volume: current_coins,
       userref: rand(1..(2**31-1))
     }
 
