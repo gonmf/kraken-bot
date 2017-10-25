@@ -1,5 +1,5 @@
 # Cryptocurrency trading bot for kraken exchange
-i
+
 It keeps buying small amounts when the value drops a certain percentage amount, relative to the average price for the last 24 hours. It waits some hours and further price drops before successive buys.
 
 It sells everything when the entire coin holdings have risen in price a certain percentage amount.
