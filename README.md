@@ -6,15 +6,17 @@ It sells everything when the entire coin holdings have risen in price a certain 
 
 Since it buys and sells using margin orders you can expect some deviation from the profit margin and buy points set.
 
-```ruby
+```bash
 bundle install
 
-cp .env.example .env
+cp config.yml.example config.yml
 
-vi .env
+vi config.yml
 
 bundle exec ruby kraken.rb
 ```
+
+If the `config.yml` file is edited, the configuration will updated without having to restart the program.
 
 For the good behavior of the program it is best for it to have sole control of the account (no third party buying and selling).
 If the account is shared, at least avoid selling small amounts. The program goes through the last buy orders to try to

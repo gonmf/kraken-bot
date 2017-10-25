@@ -1,18 +1,19 @@
 require 'mail'
 
 class Emailer
-  def initialize
+  def initialize(cfg)
+    @cfg = cfg
     @deliver = false
 
-    return if %w[SMTP_SERVER SMTP_PORT SENDER_DOMAIN SENDER_NAME SENDER_PASSWORD SENDER_ADDRESS
-                  DESTINATION_ADDRESS].any? { |config| ENV[config].blank? }
-
+    return if %i[smtp_server smtp_port sender_domain sender_name sender_password sender_address
+                  destination_address].any? { |name| @cfg.get(name).nil? || @cfg.get(name).blank? }
+    
     options = {
-      address: ENV['SMTP_SERVER'],
-      port: ENV['SMTP_PORT'].to_i,
-      domain: ENV['SENDER_DOMAIN'],
-      user_name: ENV['SENDER_NAME'],
-      password: ENV['SENDER_PASSWORD'],
+      address: @cfg.get(:smtp_server),
+      port: @cfg.get(:smtp_port).to_i,
+      domain: @cfg.get(:sender_domain),
+      user_name: @cfg.get(:sender_name),
+      password: @cfg.get(:sender_password),
       authentication: 'plain',
       enable_starttls_auto: true
     }
@@ -29,9 +30,10 @@ class Emailer
 
     loop do
       begin
+        cfg = @cfg
         mail = Mail.new do
-          from(ENV['SENDER_ADDRESS'])
-          to(ENV['DESTINATION_ADDRESS'])
+          from(cfg.get(:sender_address))
+          to(cfg.get(:destination_address))
           subject('Kraken Bot Notification')
           body(body)
         end
