@@ -7,6 +7,7 @@ require_relative 'api'
 def refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, current_coins)
   if current_coins >= cfg.get(:max_coin_to_hold).to_f
     api.cancel_limit_buy_orders
+    logger.log 'Not allowed to buy'
     return
   end
 
@@ -18,6 +19,7 @@ end
 def refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins)
   if avg_buy_price.nil? || current_coins == 0.0
     api.cancel_limit_sell_orders
+    logger.log 'Nothing to sell'
     return
   end
 

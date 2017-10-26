@@ -92,6 +92,7 @@ class Api
     end
   rescue Exception => e
     @logger.log 'Exception @ cancel_limit_buy_orders'
+    sleep(3)
     true
   end
 
@@ -106,6 +107,7 @@ class Api
     end
   rescue Exception => e
     @logger.log 'Exception @ cancel_limit_sell_orders'
+    sleep(3)
     true
   end
 
@@ -169,6 +171,7 @@ class Api
 
     price
   rescue Exception => e
+    sleep(5)
     nil
   end
 
@@ -195,8 +198,10 @@ class Api
     }
 
     @client.private.add_order(order)
+    sleep(1)
   rescue Exception => e
     @logger.log 'Exception @ add_limit_buy_order'
+    sleep(3)
   end
 
   def add_limit_sell_order(current_coins, sell_price)
@@ -210,8 +215,10 @@ class Api
     }
 
     @client.private.add_order(order)
+    sleep(1)
   rescue Exception => e
     @logger.log 'Exception @ add_limit_sell_order'
+    sleep(3)
   end
 
   def synchronous_get_open_limit_orders(type)
@@ -220,7 +227,7 @@ class Api
       begin
         orders = @client.private.open_orders
         if orders.nil?
-          sleep(10)
+          sleep(3)
           next
         end
 
