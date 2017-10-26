@@ -16,7 +16,7 @@ def refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, c
 end
 
 def refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins)
-  if avg_buy_price.nil? || current_coins < cfg.get(:minimum_coin_amount).to_f
+  if avg_buy_price.nil? || current_coins == 0.0
     api.cancel_limit_sell_orders
     return
   end

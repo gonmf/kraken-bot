@@ -42,9 +42,6 @@ max_coin_to_hold: 1.0
 # Probably needs no editing
 ###########################
 
-# Minimum significant coin account; bellow this amount consider the balance 0
-minimum_coin_amount: 0.001
-
-# When trading, round amounts and prices to these decimal cases
-coin_decimals: 3
+# When trading, truncate amounts and prices to these decimal cases
+coin_decimals: 2
 currency_decimals: 1

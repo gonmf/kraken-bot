@@ -113,9 +113,8 @@ class Api
     balance = @client.private.balance[@cfg.get(:balance_coin_name)]
     return nil if balance.nil?
 
-    balance = balance.to_f.round(@cfg.get(:coin_decimals))
+    balance = coin_trunc(balance.to_f)
 
-    balance = balance < @cfg.get(:minimum_coin_amount).to_f ? 0.0 : balance
     return nil if balance > @cfg.get(:realistic_coin_amount_max).to_f
 
     balance
@@ -141,7 +140,7 @@ class Api
   end
 
   def calculate_avg_buy_price(current_coins, closed_orders)
-    return nil if current_coins < @cfg.get(:minimum_coin_amount).to_f
+    return nil if current_coins == 0.0
 
     orders = closed_orders.select do |o|
       o.dig('descr', 'type') == 'buy'
@@ -160,7 +159,8 @@ class Api
       idx += 1
     end
 
-    return nil if total_btc < @cfg.get(:minimum_coin_amount).to_f
+    total_btc = coin_trunc(total_btc)
+    return nil if total_btc == 0.0
 
     price = (total_spent / total_btc).round(@cfg.get(:currency_decimals))
 
@@ -232,5 +232,11 @@ class Api
         sleep(10)
       end
     end
+  end
+
+  def coin_trunc(value)
+    digits = @cfg.get(:coin_decimals)
+
+    (value.to_f * (10**digits)).floor / (10**digits).to_f
   end
 end

@@ -37,7 +37,7 @@ class Configuration
       realistic_price_range_min realistic_price_range_max realistic_coin_amount_max coin_decimals
       currency_decimals kraken_api_key kraken_api_secret kraken_user_tier coin_common_name
       fiat_common_name trade_pair_name ticker_pair_name balance_coin_name buy_in_amount buy_point
-      sell_point max_coin_to_hold minimum_coin_amount
+      sell_point max_coin_to_hold
     ].find { |name| cfg[name].blank? }
 
     if option_not_found
