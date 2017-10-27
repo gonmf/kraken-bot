@@ -15,6 +15,13 @@ class Api
     end
 
     @client = KrakenClient.load
+
+    coin_name = @cfg.get(:coin_name)
+    currency_name = @cfg.get(:fiat_name)
+
+    @trade_pair_name = "#{coin_name}#{currency_name}"
+    @ticker_pair_name = "X#{coin_name}Z#{currency_name}"
+    @balance_coin_name = "X#{coin_name}"
   end
 
   def get_closed_orders
@@ -22,7 +29,7 @@ class Api
     return nil if orders.nil?
 
     orders['closed'].values.select do |o|
-      o['status'] == 'closed' && o.dig('descr', 'pair') == @cfg.get(:trade_pair_name)
+      o['status'] == 'closed' && o.dig('descr', 'pair') == @trade_pair_name
     end
   rescue Exception => e
     nil
@@ -33,6 +40,7 @@ class Api
     buy_price = (reference_price * buy_point).round(@cfg.get(:currency_decimals))
 
     options = {
+      trade_pair: @ticker_pair_name,
       amount_in_btc: amount_in_btc,
       buy_price: buy_price
     }
@@ -59,6 +67,7 @@ class Api
     sell_price = (avg_buy_price * sell_point).round(@cfg.get(:currency_decimals))
 
     options = {
+      trade_pair: @ticker_pair_name,
       current_coins: current_coins,
       sell_price: sell_price
     }
@@ -112,7 +121,7 @@ class Api
   end
 
   def get_current_coin_balance
-    balance = @client.private.balance[@cfg.get(:balance_coin_name)]
+    balance = @client.private.balance[@balance_coin_name]
     return nil if balance.nil?
 
     balance = coin_trunc(balance.to_f)
@@ -125,10 +134,10 @@ class Api
   end
 
   def get_daily_high
-    ohlc = @client.public.ohlc(pair: @cfg.get(:ticker_pair_name), interval: 1440)
+    ohlc = @client.public.ohlc(pair: @ticker_pair_name, interval: 1440)
     return nil if ohlc.nil?
 
-    line = ohlc[@cfg.get(:ticker_pair_name)]&.last
+    line = ohlc[@ticker_pair_name]&.last
     return nil if line.nil? || line.count != 8
 
     price = line[2].to_f.round(@cfg.get(:currency_decimals))
@@ -189,7 +198,7 @@ class Api
 
   def add_limit_buy_order(amount_in_btc, buy_price)
     order = {
-      pair: @cfg.get(:trade_pair_name),
+      pair: @trade_pair_name,
       type: 'buy',
       ordertype: 'limit',
       price: buy_price,
@@ -206,7 +215,7 @@ class Api
 
   def add_limit_sell_order(current_coins, sell_price)
     order = {
-      pair: @cfg.get(:trade_pair_name),
+      pair: @trade_pair_name,
       type: 'sell',
       ordertype: 'limit',
       price: sell_price,
@@ -232,7 +241,7 @@ class Api
         end
 
         return orders['open'].values.select do |h|
-          h.dig('descr', 'pair') == @cfg.get(:trade_pair_name) && h.dig('descr', 'ordertype') == 'limit' &&
+          h.dig('descr', 'pair') == @trade_pair_name && h.dig('descr', 'ordertype') == 'limit' &&
             h.dig('descr', 'type') == type && h.dig('userref') != nil && h.dig('status') == 'open'
         end
       rescue Exception => e

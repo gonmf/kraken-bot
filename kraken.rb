@@ -43,36 +43,38 @@ iteration = 0
 logger.log 'Bot started'
 
 loop do
-  # Sleep 5 minutes between checking if limit orders should be adjusted
-  sleep(5 * 60) if iteration != 0
-
   cfg.refresh
-  iteration += 1
 
   current_coins = api.get_current_coin_balance
   if current_coins.nil?
-    logger.log "Failed to retrieve current #{cfg.get(:fiat_common_name)} balance amount"
+    logger.log "Failed to retrieve current #{cfg.get(:fiat_name)} balance amount"
+    sleep(2)
     next
   end
 
   daily_high_price = api.get_daily_high
   if daily_high_price.nil?
-    logger.log "Failed to retrieve daily high price of #{cfg.get(:coin_common_name)}"
+    logger.log "Failed to retrieve daily high price of #{cfg.get(:coin_name)}"
+    sleep(4)
     next
   end
 
   closed_orders = api.get_closed_orders
   if closed_orders.nil?
     logger.log 'Failed to retrieve closed orders'
+    sleep(6)
     next
   end
 
   avg_buy_price = api.calculate_avg_buy_price(current_coins, closed_orders)
 
-  logger.log "Balance: #{current_coins} #{cfg.get(:coin_common_name)} @ " +
-       "#{opt(avg_buy_price)} #{cfg.get(:fiat_common_name)}, market daily high: " +
-       "#{daily_high_price} #{cfg.get(:fiat_common_name)}"
+  logger.log "Balance: #{current_coins} #{cfg.get(:coin_name)} @ " +
+       "#{opt(avg_buy_price)} #{cfg.get(:fiat_name)}, market daily high: " +
+       "#{daily_high_price} #{cfg.get(:fiat_name)}"
 
   refresh_buy_limit_order(logger, cfg, api, daily_high_price, avg_buy_price, current_coins)
   refresh_sell_limit_order(logger, cfg, api, avg_buy_price, current_coins)
+
+  # Sleep 5 minutes between checking if limit orders should be adjusted
+  sleep(5 * 60)
 end

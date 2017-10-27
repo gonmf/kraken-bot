@@ -1,25 +1,17 @@
-# Labels for currencies being traded, can be any name
-coin_common_name: BTC
-fiat_common_name: EUR
+# Kraken currencies being traded; XBT is used instead of BTC in Kraken
+# The first must be a coin and the second a fiat currency; coin to coin trades are not supported
+coin_name: XBT
+fiat_name: EUR
 
 # Kraken API is prone to failure, so validate if the values received make sense:
 realistic_coin_amount_max: 100.0
 realistic_price_range_min: 1000.0
 realistic_price_range_max: 10000.0
 
-
-# Kraken related
-################
-
 # Kraken account details
 kraken_api_key:
 kraken_api_secret:
 kraken_user_tier: 3
-
-# Weird names that Kraken uses
-trade_pair_name: XBTEUR
-ticker_pair_name: XXBTZEUR
-balance_coin_name: XXBT
 
 
 # Trading related
